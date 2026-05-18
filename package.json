@@ -1,0 +1,35 @@
+{
+  "name": "poh-sdk",
+  "version": "0.1.0",
+  "description": "Proof of Human SDK — scan wallets for human identity",
+  "keywords": ["proof-of-human", "poh", "identity", "wallet", "solana", "ethereum", "web3", "crypto", "blockchain", "EVM", "bitcoin"],
+  "type": "module",
+  "license": "MIT",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "react-native": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      }
+    }
+  },
+  "files": ["dist", "README.md"],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "test": "node --test tests/",
+    "prepublishOnly": "npm run build"
+  },
+  "devDependencies": {
+    "tsup": "^8.3.0",
+    "typescript": "^5.7.0"
+  }
+}
