@@ -84,10 +84,24 @@ export interface PollOptions {
 
 export interface BrainVerdict {
   status: string
-  verdict?: boolean
+  /** `"HUMAN"` | `"AI"` | `"UNCERTAIN"` — undefined while pending */
+  verdict?: 'HUMAN' | 'AI' | 'UNCERTAIN'
   confidence?: number
   signals?: Record<string, number>
   reasoning?: string
+}
+
+export interface BrainPollOptions {
+  /** Milliseconds between brain verdict checks. Default: 1 500 */
+  interval?: number
+  /** Maximum total wait in milliseconds. Default: 30 000 */
+  timeout?: number
+}
+
+/** Combined result of scanAndVerdict(): raw scan evidence + AI verdict. */
+export interface ScanWithVerdict {
+  scan: ScanResult
+  verdict: BrainVerdict
 }
 
 // ── Methods ───────────────────────────────────────────────────────────────────

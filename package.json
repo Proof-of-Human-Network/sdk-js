@@ -1,5 +1,5 @@
 {
-  "name": "poh-sdk",
+  "name": "@poh_network/sdk",
   "version": "0.1.0",
   "description": "Proof of Human SDK — scan wallets for human identity",
   "keywords": ["proof-of-human", "poh", "identity", "wallet", "solana", "ethereum", "web3", "crypto", "blockchain", "EVM", "bitcoin"],

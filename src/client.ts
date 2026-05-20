@@ -6,6 +6,8 @@ import type {
   BulkScanResult,
   JobStatus,
   BrainVerdict,
+  BrainPollOptions,
+  ScanWithVerdict,
   Method,
   PollOptions,
 } from './types.js'
@@ -200,6 +202,53 @@ export class POHClient {
       'GET',
       `/checker/brain/${encodeURIComponent(brainKey)}`,
     )
+  }
+
+  /**
+   * Poll the brain verdict endpoint until the status leaves `pending`,
+   * then return the final verdict.
+   *
+   * @example
+   * const verdict = await poh.pollBrainVerdict(scan.brainKey!)
+   * console.log(verdict.verdict, verdict.confidence)
+   */
+  async pollBrainVerdict(
+    brainKey: string,
+    options: BrainPollOptions = {},
+  ): Promise<BrainVerdict> {
+    const interval = options.interval ?? 1_500
+    const timeout  = options.timeout  ?? 30_000
+    const deadline = Date.now() + timeout
+
+    while (true) {
+      const v = await this.getBrainVerdict(brainKey)
+      if (v.status !== 'pending') return v
+      if (Date.now() + interval > deadline) {
+        throw new POHError(`Brain verdict for ${brainKey} did not resolve within ${timeout}ms`, 408)
+      }
+      await new Promise(r => setTimeout(r, interval))
+    }
+  }
+
+  /**
+   * Convenience: scan a single address and wait for the AI brain verdict.
+   * Returns both the raw scan result and the resolved verdict.
+   *
+   * @example
+   * const { scan, verdict } = await poh.scanAndVerdict('0xabc...')
+   * console.log(verdict.verdict, verdict.confidence)
+   */
+  async scanAndVerdict(
+    input: string,
+    scanOptions: ScanOptions = {},
+    brainOptions: BrainPollOptions = {},
+  ): Promise<ScanWithVerdict> {
+    const scan = await this.scan(input, scanOptions)
+    if (!scan.brainKey) {
+      return { scan, verdict: { status: 'not_found' } }
+    }
+    const verdict = await this.pollBrainVerdict(scan.brainKey, brainOptions)
+    return { scan, verdict }
   }
 
   // ── Methods ────────────────────────────────────────────────────────────────

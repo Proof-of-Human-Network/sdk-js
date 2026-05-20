@@ -9,6 +9,8 @@ export type {
   JobStatusCode,
   ScanResultItem,
   BrainVerdict,
+  BrainPollOptions,
+  ScanWithVerdict,
   Method,
   PollOptions,
 } from './types.js'
