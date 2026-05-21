@@ -1,8 +1,20 @@
 {
   "name": "@poh_network/sdk",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Proof of Human SDK — scan wallets for human identity",
-  "keywords": ["proof-of-human", "poh", "identity", "wallet", "solana", "ethereum", "web3", "crypto", "blockchain", "EVM", "bitcoin"],
+  "keywords": [
+    "proof-of-human",
+    "poh",
+    "identity",
+    "wallet",
+    "solana",
+    "ethereum",
+    "web3",
+    "crypto",
+    "blockchain",
+    "EVM",
+    "bitcoin"
+  ],
   "type": "module",
   "license": "MIT",
   "main": "./dist/index.cjs",
@@ -21,7 +33,10 @@
       }
     }
   },
-  "files": ["dist", "README.md"],
+  "files": [
+    "dist",
+    "README.md"
+  ],
   "scripts": {
     "build": "tsup",
     "dev": "tsup --watch",
