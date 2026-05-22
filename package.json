@@ -40,7 +40,7 @@
   "scripts": {
     "build": "tsup",
     "dev": "tsup --watch",
-    "test": "node --test tests/",
+    "test": "npm run build && node --test tests/poller.test.js",
     "prepublishOnly": "npm run build"
   },
   "devDependencies": {
