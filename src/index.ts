@@ -1,6 +1,8 @@
 export { POHClient, POHError } from './client.js'
+export { DEFAULT_NODES } from './types.js'
 export type {
   POHClientOptions,
+  NodeConfig,
   FetchFn,
   ScanOptions,
   ScanResult,

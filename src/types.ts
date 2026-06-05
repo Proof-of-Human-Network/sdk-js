@@ -2,9 +2,45 @@
 
 export type FetchFn = (url: string, init?: RequestInit) => Promise<Response>
 
+/** A single PoH network node entry. */
+export interface NodeConfig {
+  /** Full base URL of the miner node, e.g. 'https://miner.proofofhuman.ge' */
+  url:   string
+  /** Human-readable label (optional, for debugging). */
+  name?: string
+}
+
+/**
+ * Default public bootstrap nodes for the PoH network.
+ * Used when `nodes` is omitted and no `baseUrl` is given.
+ */
+export const DEFAULT_NODES: NodeConfig[] = [
+  { url: 'https://bootnode.proofofhuman.ge', name: 'Bootnode' },
+  { url: 'https://proofofhuman.ge',          name: 'Main'     },
+  { url: 'https://poh.assetux.com',          name: 'Relay'    },
+]
+
 export interface POHClientOptions {
-  /** Base URL of the POH API, e.g. 'https://proofofhuman.ge' */
-  baseUrl: string
+  /**
+   * Single-node base URL (legacy / backwards-compatible).
+   * Takes precedence over `nodes` when provided.
+   * e.g. 'https://proofofhuman.ge'
+   */
+  baseUrl?: string
+  /**
+   * List of network nodes to probe.
+   * The client races health-checks against all of them and uses the fastest
+   * responding one. Sticks to that node for the lifetime of the client so
+   * in-progress job IDs remain routable.
+   * Falls back to DEFAULT_NODES when neither `baseUrl` nor `nodes` is provided.
+   */
+  nodes?: (string | NodeConfig)[]
+  /**
+   * Node selection strategy when probing multiple nodes.
+   * - 'fastest'     (default) — use whichever node responds first
+   * - 'first-alive' — try nodes in order, use first that is up
+   */
+  pickStrategy?: 'fastest' | 'first-alive'
   /** API key for paid tier. Mutually exclusive with walletAddress. */
   apiKey?: string
   /** Solana wallet address for free-tier request tracking. */
@@ -28,6 +64,16 @@ export interface ScanOptions {
   txHash?: string
 }
 
+export interface OfacMatch {
+  sanctioned: true
+  name:     string
+  program:  string
+  chainCode: string
+  /** `'direct'` = the scanned address itself; `'counterparty'` = a 1-hop tx partner. */
+  type:         'direct' | 'counterparty'
+  matchedAddress: string
+}
+
 export interface ScanResult {
   /** true = human, false = not human, null = inconclusive */
   result: boolean | null
@@ -36,6 +82,8 @@ export interface ScanResult {
   freeScansLeft?: number
   source?: string
   count?: number
+  /** Present when the address (or a direct counterparty) is on the OFAC SDN list. */
+  ofac?: OfacMatch | null
 }
 
 export interface BulkScanResult {

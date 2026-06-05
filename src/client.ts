@@ -1,5 +1,6 @@
 import type {
   POHClientOptions,
+  NodeConfig,
   FetchFn,
   ScanOptions,
   ScanResult,
@@ -11,6 +12,7 @@ import type {
   Method,
   PollOptions,
 } from './types.js'
+import { DEFAULT_NODES } from './types.js'
 import { pollUntilDone, watchJob as watchJobGen } from './poller.js'
 
 // ── Error ─────────────────────────────────────────────────────────────────────
@@ -24,23 +26,69 @@ export class POHError extends Error {
   }
 }
 
+// ── Node discovery ─────────────────────────────────────────────────────────────
+
+/**
+ * Probe a node with a lightweight HEAD /healthz request.
+ * Returns the URL on success, rejects on failure or timeout.
+ */
+async function probeNode(url: string, fetchFn: FetchFn, timeoutMs: number): Promise<string> {
+  const ctrl  = typeof AbortController !== 'undefined' ? new AbortController() : undefined
+  const timer = ctrl ? setTimeout(() => ctrl.abort(), timeoutMs) : undefined
+  try {
+    const res = await fetchFn(`${url}/healthz`, {
+      method: 'HEAD',
+      signal: ctrl?.signal as AbortSignal | undefined,
+    })
+    if (!res.ok && res.status !== 404) throw new Error(`status ${res.status}`)
+    return url
+  } finally {
+    if (timer) clearTimeout(timer)
+  }
+}
+
+/** Race all nodes and return the URL of the first that responds. */
+async function pickFastestNode(nodes: string[], fetchFn: FetchFn): Promise<string> {
+  if (nodes.length === 1) return nodes[0]
+  const probes = nodes.map(url =>
+    probeNode(url, fetchFn, 4_000).catch(() => null as string | null),
+  )
+  // Promise.any polyfill: settle all but return first non-null
+  return new Promise((resolve, reject) => {
+    let remaining = probes.length
+    let resolved  = false
+    probes.forEach(p =>
+      p.then(url => {
+        if (!resolved && url !== null) { resolved = true; resolve(url) }
+        else if (!resolved && --remaining === 0) reject(new Error('All nodes unreachable'))
+      }),
+    )
+  })
+}
+
+/** Try nodes in declared order, return first one that is alive. */
+async function pickFirstAlive(nodes: string[], fetchFn: FetchFn): Promise<string> {
+  for (const url of nodes) {
+    try { return await probeNode(url, fetchFn, 4_000) } catch { /* try next */ }
+  }
+  throw new Error('All configured PoH nodes are unreachable')
+}
+
 // ── Client ────────────────────────────────────────────────────────────────────
 
 export class POHClient {
-  private readonly baseUrl: string
+  private readonly _nodes:        string[]
+  private readonly _strategy:     'fastest' | 'first-alive'
   private readonly apiKey:        string | undefined
   private readonly walletAddress: string | undefined
   private readonly _fetch:        FetchFn
   private readonly timeout:       number
+  /** Resolved after construction; awaited by every request. */
+  private readonly _baseUrlReady: Promise<string>
+  /** Cached after first resolution so subsequent requests skip the promise chain. */
+  private _cachedBaseUrl: string | undefined
 
   constructor(options: POHClientOptions) {
-    if (!options.baseUrl) throw new Error('POHClient: baseUrl is required')
-
-    this.baseUrl       = options.baseUrl.replace(/\/$/, '')
-    this.apiKey        = options.apiKey
-    this.walletAddress = options.walletAddress
-    this.timeout       = options.timeout ?? 30_000
-
     // Resolve fetch: explicit override → globalThis.fetch → error
     const f = options.fetch
       ?? (typeof globalThis !== 'undefined' && (globalThis as { fetch?: FetchFn }).fetch)
@@ -52,8 +100,45 @@ export class POHClient {
         'Pass a fetch implementation via options.fetch (e.g. node-fetch or cross-fetch).',
       )
     }
-    this._fetch = f.bind(globalThis)
+    this._fetch        = f.bind(globalThis)
+    this.apiKey        = options.apiKey
+    this.walletAddress = options.walletAddress
+    this.timeout       = options.timeout ?? 30_000
+    this._strategy     = options.pickStrategy ?? 'fastest'
+
+    if (options.baseUrl) {
+      // Legacy single-node path — no discovery needed.
+      const url = options.baseUrl.replace(/\/$/, '')
+      this._nodes         = [url]
+      this._cachedBaseUrl = url
+      this._baseUrlReady  = Promise.resolve(url)
+    } else {
+      const raw  = options.nodes ?? DEFAULT_NODES
+      this._nodes = raw
+        .map(n => (typeof n === 'string' ? n : (n as NodeConfig).url))
+        .map(u => u.replace(/\/$/, ''))
+
+      this._baseUrlReady = (
+        this._strategy === 'first-alive'
+          ? pickFirstAlive(this._nodes, this._fetch)
+          : pickFastestNode(this._nodes, this._fetch)
+      ).then(url => {
+        this._cachedBaseUrl = url
+        return url
+      })
+    }
   }
+
+  // ── Resolved base URL ─────────────────────────────────────────────────────
+
+  private _getBaseUrl(): Promise<string> {
+    return this._cachedBaseUrl
+      ? Promise.resolve(this._cachedBaseUrl)
+      : this._baseUrlReady
+  }
+
+  /** The URL of the node currently in use (undefined before first request resolves). */
+  get activeNode(): string | undefined { return this._cachedBaseUrl }
 
   // ── Internal request ───────────────────────────────────────────────────────
 
@@ -62,7 +147,8 @@ export class POHClient {
     path: string,
     body?: unknown,
   ): Promise<T> {
-    const url     = `${this.baseUrl}${path}`
+    const baseUrl = await this._getBaseUrl()
+    const url     = `${baseUrl}${path}`
     const headers: Record<string, string> = {}
 
     if (body !== undefined) headers['Content-Type'] = 'application/json'
