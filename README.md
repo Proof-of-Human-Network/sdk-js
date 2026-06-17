@@ -1,68 +1,149 @@
-# poh-sdk
+# @poh_network/sdk
 
-JavaScript / TypeScript SDK for the [Proof of Human](https://proofofhuman.ge) API.  
-Works in **Node.js**, **browsers**, **React Native**, and anywhere `fetch` is available.
+JavaScript / TypeScript SDK for the [Proof of Human](https://proofofhuman.ge) network.  
+Works in **Node.js 18+**, modern **browsers**, and **Deno**.
 
 ## Installation
 
 ```bash
-npm install poh-sdk
+npm install @poh_network/sdk
 ```
 
 ## Quick start
 
 ```ts
-import { POHClient } from 'poh-sdk'
+import { POHClient } from '@poh_network/sdk'
 
-const poh = new POHClient({
-  baseUrl: 'https://your-poh-instance.com',
-  apiKey:  'your-api-key',           // or use walletAddress for free tier
-})
+const poh = new POHClient({ baseUrl: 'https://bootnode.proofofhuman.ge' })
 
 // Single scan
 const { result, brainKey } = await poh.scan('0xabc...')
 // result: true = human  |  false = not human  |  null = inconclusive
 
-// AI verdict (richer explanation)
-const verdict = await poh.getBrainVerdict(brainKey!)
-console.log(verdict.reasoning)
+// AI verdict
+const verdict = await poh.pollBrainVerdict(brainKey!)
+console.log(verdict.verdict, verdict.confidence)
 ```
 
-## Bulk scans with job polling
+## Natural language jobs
 
 ```ts
-// Submit — returns a job ID immediately
-const { jobId } = await poh.scanBulk([
-  '0xaaa...',
-  '0xbbb...',
-  '0xccc...',
-])
+// Ask a question — returns immediately with a job ID
+const ref = await poh.submitJob(
+  'What does vitalik.eth write about on Paragraph?',
+  { budget: 0.5, walletAddress: 'poh...' },
+)
 
-// Option A — wait for completion
+// Wait for the answer
+const result = await poh.pollJobResult(ref.jobId)
+console.log(result.output)       // skill-specific structured output
+console.log(result.nlResponse)   // LLM-generated natural language answer
+
+// One-liner convenience
+const result = await poh.askAndWait(
+  'What NFTs does gmoney.eth hold?',
+  { budget: 0.5, walletAddress: 'poh...' },
+)
+```
+
+## Wallet / blockchain
+
+```ts
+// Read balance (μPOH — divide by 1e9 for POH)
+const { balance } = await poh.getBalance('poh...')
+console.log(balance / 1e9, 'POH')
+
+// Nonce (needed before building a transaction)
+const { nonce } = await poh.getNonce('poh...')
+
+// Transaction history
+const { entries } = await poh.getTransactionHistory('poh...', 50)
+
+// Miner info
+const info = await poh.getMinerInfo()
+console.log(info.model, info.reputation)
+```
+
+## Signing & transactions
+
+```ts
+import {
+  generateKeyPair,
+  buildTransfer,
+  signTransaction,
+  createSigningProof,
+} from '@poh_network/sdk'
+
+// 1. Generate a keypair
+const { signingPrivateKey, signingPublicKey } = await generateKeyPair()
+
+// 2. Register the public key with the node (one-time, per node)
+const proof = await createSigningProof(myAddress, signingPrivateKey)
+await poh.registerSigningKey(myAddress, signingPublicKey, proof)
+
+// 3. Build, sign, and submit a transfer
+const { nonce } = await poh.getNonce(myAddress)
+const tx     = await buildTransfer(myAddress, recipient, 5.0, nonce + 1)
+const signed = await signTransaction(tx, signingPrivateKey)
+const result = await poh.submitTransaction(signed)
+console.log(result.txHash)
+
+// One-liner convenience (fetches nonce automatically)
+const result = await poh.transfer(myAddress, recipient, 5.0, signingPrivateKey)
+```
+
+## Skills
+
+```ts
+const skills = await poh.listSkills()
+skills.forEach(s => console.log(s.id, s.feeMin))
+```
+
+## Bulk scans
+
+```ts
+const { jobId } = await poh.scanBulk(['0xaaa...', '0xbbb...', '0xccc...'])
+
+// Poll until done
 const final = await poh.pollJob(jobId, {
-  interval:   2_000,           // poll every 2 s (default: 1.5 s)
-  timeout:    120_000,         // give up after 2 min (default)
+  interval:   2_000,
   onProgress: j => console.log(`${j.percent}% complete`),
 })
-console.log(final.results)
 
-// Option B — stream progress with an async generator
+// Or stream progress
 for await (const snap of poh.watchJob(jobId)) {
   process.stdout.write(`\r${snap.percent}% (${snap.done}/${snap.total})`)
 }
 
-// Option C — one-liner convenience
+// One-liner
 const { results } = await poh.scanAndWait(['0xaaa...', '0xbbb...'])
 ```
 
-## Signal methods
+## Multi-node
 
 ```ts
-// List all human-identity signal methods (sorted by vote score)
-const methods = await poh.getMethods()
+const poh = new POHClient({
+  nodes: [
+    'https://bootnode.proofofhuman.ge',
+    'https://proofofhuman.ge',
+    'https://poh.assetux.com',
+  ]
+})
+// Automatically picks the fastest responding node
+```
 
-// Single method
-const method = await poh.getMethod('methodId')
+## Error handling
+
+```ts
+import { POHClient, POHError } from '@poh_network/sdk'
+
+try {
+  await poh.scan('0xabc...')
+} catch (err) {
+  if (err instanceof POHError) {
+    console.error(`HTTP ${err.status}: ${err.message}`)
+  }
+}
 ```
 
 ## API reference
@@ -71,58 +152,68 @@ const method = await poh.getMethod('methodId')
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `baseUrl` | `string` | **required** | Base URL of the POH API |
+| `baseUrl` | `string` | — | Single-node base URL |
+| `nodes` | `string[]` | Default public nodes | Multiple nodes for failover |
 | `apiKey` | `string` | — | API key (paid tier) |
-| `walletAddress` | `string` | — | Solana wallet for free-tier tracking |
-| `fetch` | `FetchFn` | `globalThis.fetch` | Custom fetch (Node < 18, React Native) |
-| `timeout` | `number` | `30000` | Per-request timeout in ms |
+| `walletAddress` | `string` | — | Wallet for free-tier accounting |
+| `fetch` | `FetchFn` | `globalThis.fetch` | Custom fetch implementation |
+| `timeout` | `number` | `30000` | Per-request timeout (ms) |
 
-### Methods
+### Scanning
 
-| Method | Returns | Description |
-|--------|---------|-------------|
-| `scan(input, opts?)` | `Promise<ScanResult>` | Single-address synchronous scan |
-| `scanBulk(inputs, opts?)` | `Promise<BulkScanResult>` | Submit bulk job |
-| `getJob(jobId)` | `Promise<JobStatus>` | Fetch current job snapshot |
-| `pollJob(jobId, opts?)` | `Promise<JobStatus>` | Poll until done/error |
-| `watchJob(jobId, opts?)` | `AsyncGenerator<JobStatus>` | Stream updates |
-| `scanAndWait(inputs, opts?)` | `Promise<JobStatus>` | Bulk + poll in one call |
-| `getBrainVerdict(brainKey)` | `Promise<BrainVerdict>` | AI verdict for a scan |
-| `getMethods(walletAddress?)` | `Promise<Method[]>` | List signal methods |
-| `getMethod(methodId)` | `Promise<Method>` | Single method by ID |
+| Method | Description |
+|--------|-------------|
+| `scan(input, opts?)` | Single-address scan |
+| `scanBulk(inputs, opts?)` | Submit bulk scan job |
+| `pollJob(jobId, opts?)` | Poll until job completes |
+| `watchJob(jobId, opts?)` | Stream job snapshots |
+| `scanAndWait(inputs, opts?)` | Bulk scan + poll in one call |
+| `getBrainVerdict(brainKey)` | AI verdict for a scan |
+| `pollBrainVerdict(brainKey, opts?)` | Poll until verdict resolves |
+| `scanAndVerdict(input, opts?)` | Scan + verdict in one call |
 
-### Node.js < 18
+### Natural language jobs
 
-Pass a fetch implementation via `options.fetch`:
+| Method | Description |
+|--------|-------------|
+| `submitJob(question, opts?)` | Submit NL question |
+| `getJobStatus(jobId)` | Poll job status |
+| `getJobResult(jobId)` | Fetch completed result |
+| `pollJobResult(jobId, opts?)` | Poll until result ready |
+| `askAndWait(question, opts?)` | Submit + wait in one call |
 
-```ts
-import fetch from 'node-fetch'
-const poh = new POHClient({ baseUrl: '...', fetch })
-```
+### Wallet / blockchain
 
-## Error handling
+| Method | Description |
+|--------|-------------|
+| `getBalance(address)` | Wallet balance in μPOH |
+| `getNonce(address)` | Current account nonce |
+| `getTransactionHistory(address, limit?)` | Transaction history |
+| `getPendingTransactions()` | Mempool pending txs |
+| `submitTransaction(tx)` | Submit pre-signed tx |
+| `registerSigningKey(addr, pubKeyPem, proof)` | Register signing key |
+| `transfer(from, to, amountPOH, privateKey, fee?, memo?)` | Full transfer flow |
 
-All network errors throw `POHError` with a `.status` (HTTP status code) property.
+### Signing utilities
 
-```ts
-import { POHClient, POHError } from 'poh-sdk'
+| Export | Description |
+|--------|-------------|
+| `generateKeyPair()` | Fresh Ed25519 keypair (PKCS8 PEM) |
+| `signData(message, privateKeyPem)` | Sign arbitrary data |
+| `createSigningProof(address, privateKeyPem)` | Proof for key registration |
+| `buildTransfer(from, to, amountPOH, nonce, fee?, memo?)` | Build unsigned tx |
+| `signTransaction(tx, privateKeyPem)` | Sign a tx |
+| `computeTxHash(tx)` | SHA-256 tx hash |
+| `pemToBytes(pem)` | Decode PEM to bytes |
+| `bytesToPem(bytes, type)` | Encode bytes to PEM |
 
-try {
-  await poh.scan('0xabc...')
-} catch (err) {
-  if (err instanceof POHError) {
-    console.error(`API error ${err.status}: ${err.message}`)
-  }
-}
-```
+### Node info
 
-## TypeScript
-
-The package ships full `.d.ts` declarations. All request and response types are exported:
-
-```ts
-import type { ScanResult, JobStatus, BrainVerdict, Method } from 'poh-sdk'
-```
+| Method | Description |
+|--------|-------------|
+| `getNodeInfo()` | Node metadata (/healthz) |
+| `getMinerInfo()` | Miner details (gas price, model, reputation) |
+| `listSkills()` | Available skills on the node |
 
 ## License
 

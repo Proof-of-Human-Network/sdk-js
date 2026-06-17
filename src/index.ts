@@ -1,4 +1,14 @@
 export { POHClient, POHError } from './client.js'
+export {
+  generateKeyPair,
+  signData,
+  createSigningProof,
+  buildTransfer,
+  signTransaction,
+  computeTxHash,
+  pemToBytes,
+  bytesToPem,
+} from './signing.js'
 export { DEFAULT_NODES } from './types.js'
 export type {
   POHClientOptions,
@@ -15,4 +25,21 @@ export type {
   ScanWithVerdict,
   Method,
   PollOptions,
+  AskOptions,
+  AskJobRef,
+  AskJobStatus,
+  AskJobResult,
+  NodeInfo,
+  Skill,
+  WalletBalance,
+  AccountNonce,
+  TxHistoryEntry,
+  TxHistoryResult,
+  PohTxRecord,
+  TxSubmitResult,
+  SendResult,
+  PendingTxResult,
+  RegisterKeyResult,
+  MinerInfo,
 } from './types.js'
+export type { KeyPair, PohTx } from './signing.js'

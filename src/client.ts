@@ -11,7 +11,22 @@ import type {
   ScanWithVerdict,
   Method,
   PollOptions,
+  AskOptions,
+  AskJobRef,
+  AskJobStatus,
+  AskJobResult,
+  NodeInfo,
+  Skill,
+  WalletBalance,
+  AccountNonce,
+  TxHistoryResult,
+  PendingTxResult,
+  TxSubmitResult,
+  RegisterKeyResult,
+  MinerInfo,
+  PohTxRecord,
 } from './types.js'
+import type { PohTx } from './signing.js'
 import { DEFAULT_NODES } from './types.js'
 import { pollUntilDone, watchJob as watchJobGen } from './poller.js'
 
@@ -352,5 +367,290 @@ export class POHClient {
   /** Fetch a single signal method by its ID. */
   async getMethod(methodId: string): Promise<Method> {
     return this.request<Method>('GET', `/verifyer/${encodeURIComponent(methodId)}`)
+  }
+
+  // ── Natural language jobs ──────────────────────────────────────────────────
+
+  /**
+   * Route a natural language question and submit it as a skill job.
+   * Throws POHError(422) if the router does not match a skill.
+   */
+  async submitJob(question: string, options: AskOptions = {}): Promise<AskJobRef> {
+    const budgetRaw = Math.round((options.budget ?? 0) * 1_000_000_000)
+    const route = await this.request<{
+      type: 'skill' | 'chat'
+      skillId?: string
+      input?: object
+      reason?: string
+    }>('POST', '/chat/route', { message: question, budget: budgetRaw })
+
+    if (route.type !== 'skill' || !route.skillId) {
+      throw new POHError(
+        route.reason ?? 'No skill matched the question',
+        422,
+      )
+    }
+
+    return this.request<AskJobRef>('POST', '/job', {
+      type:             'skill',
+      skillId:          route.skillId,
+      payload:          route.input ?? {},
+      maxBudget:        budgetRaw,
+      requesterAddress: options.walletAddress ?? this.walletAddress,
+    })
+  }
+
+  /** Fetch the current status of a natural language job. */
+  async getJobStatus(jobId: string): Promise<AskJobStatus> {
+    return this.request<AskJobStatus>('GET', `/job/${encodeURIComponent(jobId)}/status`)
+  }
+
+  /**
+   * Fetch the result of a completed natural language job.
+   * Returns `{ jobId, status: 'computing', output: null }` when the job is not yet done (HTTP 202).
+   */
+  async getJobResult(jobId: string): Promise<AskJobResult> {
+    const baseUrl = await this._getBaseUrl()
+    const url     = `${baseUrl}/job/${encodeURIComponent(jobId)}/result`
+    const headers: Record<string, string> = {}
+    if (this.apiKey) headers['x-api-key'] = this.apiKey
+
+    let controller: AbortController | undefined
+    let timer: ReturnType<typeof setTimeout> | undefined
+    if (typeof AbortController !== 'undefined') {
+      controller = new AbortController()
+      timer      = setTimeout(() => controller!.abort(), this.timeout)
+    }
+
+    try {
+      const res = await this._fetch(url, {
+        method: 'GET',
+        headers,
+        signal: controller?.signal as AbortSignal | undefined,
+      })
+
+      if (res.status === 202) {
+        return { jobId, status: 'computing', output: null }
+      }
+
+      if (!res.ok) {
+        const text = await res.text().catch(() => '')
+        let msg    = text
+        try { msg = (JSON.parse(text) as { error?: string }).error ?? text } catch { /* raw */ }
+        throw new POHError(msg || `HTTP ${res.status}`, res.status)
+      }
+
+      const data = await res.json() as {
+        jobId: string
+        verdict?: string
+        profile?: { skillOutput?: unknown; skillId?: string; tokensUsed?: number; nlResponse?: string }
+        evidence?: unknown
+        minerWallet?: string
+        error?: string
+      }
+
+      return {
+        jobId:      data.jobId,
+        status:     (data.error ? 'error' : 'done') as 'done' | 'error',
+        output:     data.profile?.skillOutput ?? null,
+        nlResponse: data.profile?.nlResponse,
+        skillId:    data.profile?.skillId,
+        tokensUsed: data.profile?.tokensUsed,
+        error:      data.error,
+      }
+    } catch (err) {
+      if ((err as Error).name === 'AbortError') {
+        throw new POHError(`Request timed out after ${this.timeout}ms`, 408)
+      }
+      throw err
+    } finally {
+      if (timer) clearTimeout(timer)
+    }
+  }
+
+  /**
+   * Poll a natural language job until 'done' or 'error', then return the result.
+   */
+  async pollJobResult(
+    jobId: string,
+    options: PollOptions = {},
+  ): Promise<AskJobResult> {
+    const interval = options.interval ?? 1_500
+    const timeout  = options.timeout  ?? 120_000
+    const deadline = Date.now() + timeout
+
+    while (true) {
+      const s = await this.getJobStatus(jobId)
+      if (s.status === 'done' || s.status === 'error') return this.getJobResult(jobId)
+      if (Date.now() + interval > deadline) {
+        throw new POHError(`Job ${jobId} did not complete within ${timeout}ms`, 408)
+      }
+      await new Promise(r => setTimeout(r, interval))
+    }
+  }
+
+  /**
+   * Route, submit, and wait for a natural language job, returning the final result.
+   *
+   * @example
+   * const result = await poh.askAndWait('Summarise the latest posts from vitalik.eth', {
+   *   budget: 0.5,
+   *   walletAddress: 'poh...',
+   * })
+   * console.log(result.nlResponse ?? result.output)
+   */
+  async askAndWait(
+    question: string,
+    options: AskOptions & PollOptions = {},
+  ): Promise<AskJobResult> {
+    const { interval, timeout, budget, walletAddress } = options
+    const ref = await this.submitJob(question, { budget, walletAddress })
+    return this.pollJobResult(ref.jobId, { interval, timeout })
+  }
+
+  // ── Node info ──────────────────────────────────────────────────────────────
+
+  /**
+   * Fetch metadata about the currently connected node.
+   * Returns node ID, version, wallet address, reputation, and peer count.
+   */
+  async getNodeInfo(): Promise<NodeInfo> {
+    return this.request<NodeInfo>('GET', '/healthz')
+  }
+
+  /**
+   * List all skills available on the connected node.
+   * Each skill entry includes its ID, description, and trigger phrases.
+   */
+  async listSkills(): Promise<Skill[]> {
+    return this.request<Skill[]>('GET', '/api/skills')
+  }
+
+  // ── Wallet / blockchain ────────────────────────────────────────────────────
+
+  /**
+   * Get the POH balance for an address.
+   * Balance is returned in μPOH (1 POH = 1 000 000 000 μPOH).
+   */
+  async getBalance(address: string): Promise<WalletBalance> {
+    return this.request<WalletBalance>('GET', `/api/wallet/balance?address=${encodeURIComponent(address)}`)
+  }
+
+  /**
+   * Get the current transaction nonce for an address.
+   * Increment by 1 when building your next transaction.
+   */
+  async getNonce(address: string): Promise<AccountNonce> {
+    return this.request<AccountNonce>('GET', `/api/wallet/nonce?address=${encodeURIComponent(address)}`)
+  }
+
+  /**
+   * Get the balance journal history (sent / received / mining rewards) for an address.
+   * @param limit Max entries to return (default 30).
+   */
+  async getTransactionHistory(address: string, limit = 30): Promise<TxHistoryResult> {
+    const qs = `address=${encodeURIComponent(address)}&limit=${limit}`
+    return this.request<TxHistoryResult>('GET', `/api/wallet/history?${qs}`)
+  }
+
+  /**
+   * Get all raw transaction records involving an address
+   * (both submissions by this node and transfers).
+   */
+  async getTransactions(address: string): Promise<{ address: string; transactions: PohTxRecord[] }> {
+    return this.request('GET', `/api/wallet/transactions?address=${encodeURIComponent(address)}`)
+  }
+
+  /**
+   * Get all transactions currently pending in the mempool.
+   */
+  async getPendingTransactions(): Promise<PendingTxResult> {
+    return this.request<PendingTxResult>('GET', '/api/tx/pending')
+  }
+
+  /**
+   * Submit a pre-signed PoH transaction to the network.
+   *
+   * Build and sign the transaction client-side using `buildTransfer()` and
+   * `signTransaction()` from `@poh_network/sdk/signing`, then pass the result here.
+   *
+   * The node validates the signature and nonce, then gossips the transaction
+   * to all peers.
+   *
+   * @example
+   * import { buildTransfer, signTransaction } from '@poh_network/sdk'
+   *
+   * const { nonce } = await poh.getNonce(myAddress)
+   * const tx = await buildTransfer(myAddress, recipient, 1.5, nonce + 1)
+   * const signed = await signTransaction(tx, myPrivateKeyPem)
+   * const { txHash } = await poh.submitTransaction(signed)
+   */
+  async submitTransaction(tx: PohTx): Promise<TxSubmitResult> {
+    return this.request<TxSubmitResult>('POST', '/api/tx/submit', tx)
+  }
+
+  /**
+   * Register an Ed25519 public key for a wallet address on this node.
+   *
+   * Required before the node will accept signed transactions from an external wallet.
+   * The `proof` is a signature of the wallet address itself — generate it with
+   * `createSigningProof(address, privateKeyPem)`.
+   *
+   * @example
+   * import { generateKeyPair, createSigningProof } from '@poh_network/sdk'
+   *
+   * const { signingPrivateKey, signingPublicKey } = await generateKeyPair()
+   * const proof = await createSigningProof(myAddress, signingPrivateKey)
+   * await poh.registerSigningKey(myAddress, signingPublicKey, proof)
+   */
+  async registerSigningKey(
+    address: string,
+    signingPublicKey: string,
+    proof: string,
+  ): Promise<RegisterKeyResult> {
+    return this.request<RegisterKeyResult>('POST', '/api/wallet/register-key', {
+      address,
+      signingPublicKey,
+      proof,
+    })
+  }
+
+  /**
+   * Convenience: build, sign, and submit a POH transfer in one call.
+   *
+   * Fetches the current nonce automatically, builds the transaction, signs it,
+   * and submits it to the network.
+   *
+   * @param from           Sender address.
+   * @param to             Recipient address.
+   * @param amountPOH      Amount in POH units (e.g. 1.5 = 1.5 POH).
+   * @param privateKeyPem  PKCS8 PEM private key for signing.
+   * @param fee            Miner fee in μPOH (default 0).
+   * @param memo           Optional memo string.
+   *
+   * @example
+   * const { txHash } = await poh.transfer('pohAbc...', 'pohXyz...', 5.0, myPrivKey)
+   */
+  async transfer(
+    from: string,
+    to: string,
+    amountPOH: number,
+    privateKeyPem: string,
+    fee = 0,
+    memo = '',
+  ): Promise<TxSubmitResult> {
+    const { buildTransfer, signTransaction } = await import('./signing.js')
+    const { nonce } = await this.getNonce(from)
+    const tx     = await buildTransfer(from, to, amountPOH, nonce + 1, fee, memo)
+    const signed = await signTransaction(tx, privateKeyPem)
+    return this.submitTransaction(signed)
+  }
+
+  /**
+   * Get detailed info about the connected miner node:
+   * wallet address, gas price, LLM model, queue length, and reputation.
+   */
+  async getMinerInfo(): Promise<MinerInfo> {
+    return this.request<MinerInfo>('GET', '/api/miner/info')
   }
 }
