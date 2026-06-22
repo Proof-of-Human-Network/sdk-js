@@ -125,15 +125,21 @@ test('POHError is thrown on non-2xx responses', async () => {
 
 // ── POHClient constructor ──────────────────────────────────────────────────
 
-test('constructor throws when baseUrl missing', () => {
-  assert.throws(
-    () => new POHClient({ baseUrl: '' }),
-    /baseUrl is required/,
-  )
+test('constructor throws when fetch is unavailable', () => {
+  const origFetch = globalThis.fetch
+  try {
+    // @ts-ignore — simulate environment without fetch
+    delete globalThis.fetch
+    assert.throws(
+      () => new POHClient({ baseUrl: 'http://example.com' }),
+      /fetch is unavailable/,
+    )
+  } finally {
+    globalThis.fetch = origFetch
+  }
 })
 
 test('constructor trims trailing slash from baseUrl', () => {
   const c = new POHClient({ baseUrl: 'https://api.example.com/', fetch: () => Promise.resolve(new Response('{}')) })
-  // accessing private via toString trick
-  assert.ok(c instanceof POHClient)
+  assert.equal(c.activeNode, 'https://api.example.com')
 })

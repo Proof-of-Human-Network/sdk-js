@@ -172,9 +172,18 @@ export async function buildTransfer(
 export async function signTransaction(tx: PohTx, privateKeyPem: string): Promise<PohTx> {
   if (!tx.txHash) throw new Error('tx.txHash missing — call buildTransfer() first')
   const signature = await signData(tx.txHash, privateKeyPem)
-  // Derive public key from private key (re-import, then export public part)
-  const privKey   = await importPrivKey(privateKeyPem)
-  const pubBuf    = await crypto.subtle.exportKey('spki', privKey as CryptoKey)
+  // Derive the public key: export private key as JWK (contains 'x' = public key bytes),
+  // then reconstruct a public-only CryptoKey and export as SPKI PEM.
+  const privKey = await importPrivKey(privateKeyPem)
+  const jwk = await crypto.subtle.exportKey('jwk', privKey) as JsonWebKey & { x?: string }
+  const pubKey = await crypto.subtle.importKey(
+    'jwk',
+    { kty: 'OKP', crv: 'Ed25519', x: jwk.x, key_ops: ['verify'] } as JsonWebKey,
+    { name: 'Ed25519' } as EcKeyImportParams,
+    true,
+    ['verify'],
+  )
+  const pubBuf = await crypto.subtle.exportKey('spki', pubKey)
   const signingPublicKey = bytesToPem(new Uint8Array(pubBuf), 'PUBLIC KEY')
   return { ...tx, signature, signingPublicKey }
 }
