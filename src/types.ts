@@ -173,6 +173,48 @@ export interface AskOptions {
   budget?: number
   /** Wallet address to charge the budget from. Required when budget > 0. */
   walletAddress?: string
+  /**
+   * Restrict the job to miners running this exact model (e.g. 'qwen2.5:1.5b', 'llama3.1:8b').
+   * Omit to let any available miner handle it.
+   */
+  model?: string
+}
+
+// ── Chat ──────────────────────────────────────────────────────────────────────
+
+export interface ChatOptions {
+  /** Prior conversation turns, oldest first. */
+  history?: { role: 'user' | 'assistant' | 'system'; content: string }[]
+  /** Specific model to use. If not installed locally on the node, it's relayed to a peer running it. */
+  model?: string
+  /**
+   * Private (default true): the node only uses its own local LLM — never relays to a
+   * peer miner or a configured cloud AI provider.
+   * Public (false): allowed to fall back to a peer or a configured cloud AI provider
+   * (Claude/OpenAI/Grok) if the local LLM is unavailable, and required for `model`s
+   * that aren't installed locally on the node.
+   */
+  private?: boolean
+}
+
+export interface ChatResult {
+  message: string
+  /** Set when a skill answered the question instead of a plain chat reply. */
+  skill?: string
+  /** True if a peer miner (not this node's local LLM) produced the reply. */
+  _fromPeer?: boolean
+  /** Set to the provider id (e.g. 'anthropic') when a configured cloud AI provider produced the reply. */
+  _fromProvider?: string
+  error?: string
+}
+
+// ── Feedback ──────────────────────────────────────────────────────────────────
+
+export interface FeedbackResult {
+  ok: boolean
+  jobId: string
+  rating: 'positive' | 'negative' | 'neutral'
+  stars: number | null
 }
 
 export interface AskJobRef {

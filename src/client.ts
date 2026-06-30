@@ -15,6 +15,9 @@ import type {
   AskJobRef,
   AskJobStatus,
   AskJobResult,
+  ChatOptions,
+  ChatResult,
+  FeedbackResult,
   NodeInfo,
   Skill,
   WalletBalance,
@@ -397,6 +400,33 @@ export class POHClient {
       payload:          route.input ?? {},
       maxBudget:        budgetRaw,
       requesterAddress: options.walletAddress ?? this.walletAddress,
+      model:            options.model,
+    })
+  }
+
+  /**
+   * Send a free-form chat message and get a direct LLM reply — no job queue, no fee.
+   * Private by default: the connected node only uses its own local LLM. Pass
+   * `{ private: false }` to allow falling back to a peer miner or a configured
+   * cloud AI provider, which is also required when requesting a `model` that
+   * isn't installed locally on the node.
+   *
+   * @example
+   * const { message } = await poh.chat('What is proof of humanity?')
+   *
+   * @example
+   * // Use a specific network model, allowing peer relay
+   * const { message } = await poh.chat('Explain this contract', {
+   *   model: 'llama3.1:70b',
+   *   private: false,
+   * })
+   */
+  async chat(message: string, options: ChatOptions = {}): Promise<ChatResult> {
+    return this.request<ChatResult>('POST', '/chat/ask', {
+      message,
+      history: options.history ?? [],
+      model:   options.model,
+      private: options.private ?? true,
     })
   }
 
@@ -506,6 +536,22 @@ export class POHClient {
     const { interval, timeout, budget, walletAddress } = options
     const ref = await this.submitJob(question, { budget, walletAddress })
     return this.pollJobResult(ref.jobId, { interval, timeout })
+  }
+
+  /**
+   * Rate a completed job 1-5 stars. Feeds the miner's reputation score and
+   * (for verdict-scoring jobs) corrects the AI brain's weights.
+   * Each job can only be rated once — a second call returns HTTP 409.
+   *
+   * @example
+   * await poh.submitFeedback(jobId, 5)
+   */
+  async submitFeedback(jobId: string, stars: number, comment?: string): Promise<FeedbackResult> {
+    return this.request<FeedbackResult>('POST', `/api/jobs/${encodeURIComponent(jobId)}/feedback`, {
+      stars,
+      comment,
+      requesterAddress: this.walletAddress,
+    })
   }
 
   // ── Node info ──────────────────────────────────────────────────────────────
