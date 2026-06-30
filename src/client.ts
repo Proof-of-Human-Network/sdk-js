@@ -17,6 +17,7 @@ import type {
   AskJobResult,
   ChatOptions,
   ChatResult,
+  ComputeOptions,
   FeedbackResult,
   NodeInfo,
   Skill,
@@ -377,6 +378,10 @@ export class POHClient {
   /**
    * Route a natural language question and submit it as a skill job.
    * Throws POHError(422) if the router does not match a skill.
+   *
+   * Skill jobs always require a fee — pass `budget`, `walletAddress`, and
+   * `privateKeyPem` so the request can be signed. The node verifies the
+   * signature and debits the fee before it will run the job at all.
    */
   async submitJob(question: string, options: AskOptions = {}): Promise<AskJobRef> {
     const budgetRaw = Math.round((options.budget ?? 0) * 1_000_000_000)
@@ -394,13 +399,83 @@ export class POHClient {
       )
     }
 
+    const requesterAddress = options.walletAddress ?? this.walletAddress
+    const jobId = `job-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+
+    let paymentTx: { txHash: string; signature: string } | undefined
+    if (budgetRaw > 0) {
+      if (!requesterAddress || !options.privateKeyPem) {
+        throw new POHError(
+          'submitJob: walletAddress and privateKeyPem are required when budget > 0 — skill jobs always require a signed fee.',
+          402,
+        )
+      }
+      const { signJobPayment } = await import('./signing.js')
+      const [{ minerAddress }, { nonce }] = await Promise.all([
+        this.getMinerInfo(),
+        this.getNonce(requesterAddress),
+      ])
+      paymentTx = await signJobPayment(
+        { jobId, requesterAddress, minerAddress, amount: budgetRaw, nonce },
+        options.privateKeyPem,
+      )
+    }
+
     return this.request<AskJobRef>('POST', '/job', {
+      id:               jobId,
       type:             'skill',
       skillId:          route.skillId,
       payload:          route.input ?? {},
       maxBudget:        budgetRaw,
-      requesterAddress: options.walletAddress ?? this.walletAddress,
+      requesterAddress,
       model:            options.model,
+      paymentTx,
+    })
+  }
+
+  /**
+   * Submit a paid compute job that runs a user-specified model (and, optionally,
+   * grounds the answer in a Hugging Face dataset already installed on the node).
+   * Compute jobs are never free — the node rejects the request outright unless
+   * it carries a valid signed fee payment.
+   *
+   * @example
+   * const { jobId } = await poh.runCompute('Summarize the top 5 rows', {
+   *   model: 'llama3.1:8b',
+   *   dataset: 'some-org/some-dataset',
+   *   budget: 0.5,
+   *   walletAddress: myAddress,
+   *   privateKeyPem: myPrivateKey,
+   * })
+   * const result = await poh.pollJobResult(jobId)
+   */
+  async runCompute(prompt: string, options: ComputeOptions): Promise<AskJobRef> {
+    const { model, dataset, budget, walletAddress, privateKeyPem } = options
+    if (!(budget > 0)) {
+      throw new POHError('runCompute: budget must be > 0 — compute jobs always require a fee', 402)
+    }
+    const jobId  = options.jobId ?? `job-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+    const amount = Math.round(budget * 1_000_000_000)
+
+    const { signJobPayment } = await import('./signing.js')
+    const [{ minerAddress }, { nonce }] = await Promise.all([
+      this.getMinerInfo(),
+      this.getNonce(walletAddress),
+    ])
+    const paymentTx = await signJobPayment(
+      { jobId, requesterAddress: walletAddress, minerAddress, amount, nonce },
+      privateKeyPem,
+    )
+
+    return this.request<AskJobRef>('POST', '/job', {
+      id:               jobId,
+      type:             'compute',
+      model,
+      dataset,
+      payload:          { prompt },
+      maxBudget:        amount,
+      requesterAddress: walletAddress,
+      paymentTx,
     })
   }
 
@@ -533,8 +608,8 @@ export class POHClient {
     question: string,
     options: AskOptions & PollOptions = {},
   ): Promise<AskJobResult> {
-    const { interval, timeout, budget, walletAddress } = options
-    const ref = await this.submitJob(question, { budget, walletAddress })
+    const { interval, timeout, budget, walletAddress, model, privateKeyPem } = options
+    const ref = await this.submitJob(question, { budget, walletAddress, model, privateKeyPem })
     return this.pollJobResult(ref.jobId, { interval, timeout })
   }
 

@@ -187,3 +187,56 @@ export async function signTransaction(tx: PohTx, privateKeyPem: string): Promise
   const signingPublicKey = bytesToPem(new Uint8Array(pubBuf), 'PUBLIC KEY')
   return { ...tx, signature, signingPublicKey }
 }
+
+// ── Job fee payment ──────────────────────────────────────────────────────────
+
+export interface JobPaymentParams {
+  jobId: string
+  requesterAddress: string
+  /** The connected node's wallet address — from `client.getMinerInfo().minerAddress`. */
+  minerAddress: string
+  /** Fee amount in μPOH. */
+  amount: number
+  /** Requester's current on-chain nonce — from `client.getNonce(requesterAddress)`. */
+  nonce: number
+}
+
+/**
+ * Compute the canonical payment hash for a job fee. Binds the fee to one specific
+ * job + miner + amount + nonce, so a signature over it can't be replayed against a
+ * different job or a higher budget. Must match the node's `computeJobPaymentHash`.
+ */
+export async function computeJobPaymentHash(params: JobPaymentParams): Promise<string> {
+  const payload = JSON.stringify({
+    jobId:             params.jobId,
+    requesterAddress:  params.requesterAddress,
+    minerAddress:      params.minerAddress,
+    amount:            params.amount,
+    nonce:             params.nonce,
+  })
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(payload))
+  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('')
+}
+
+/**
+ * Sign a fee payment authorizing a fee-required job (skill execution, or a
+ * model/dataset compute job). The result goes in the `paymentTx` field of a
+ * `/job` POST — the node verifies the signature and debits the requester's
+ * balance before it will run the job at all.
+ *
+ * @example
+ * const { minerAddress } = await poh.getMinerInfo()
+ * const { nonce } = await poh.getNonce(myAddress)
+ * const paymentTx = await signJobPayment(
+ *   { jobId, requesterAddress: myAddress, minerAddress, amount: 500_000_000, nonce },
+ *   myPrivateKeyPem,
+ * )
+ */
+export async function signJobPayment(
+  params: JobPaymentParams,
+  privateKeyPem: string,
+): Promise<{ txHash: string; signature: string }> {
+  const txHash    = await computeJobPaymentHash(params)
+  const signature = await signData(txHash, privateKeyPem)
+  return { txHash, signature }
+}

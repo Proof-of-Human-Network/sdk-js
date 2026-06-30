@@ -8,6 +8,8 @@ export {
   computeTxHash,
   pemToBytes,
   bytesToPem,
+  computeJobPaymentHash,
+  signJobPayment,
 } from './signing.js'
 export { DEFAULT_NODES } from './types.js'
 export type {
@@ -29,6 +31,7 @@ export type {
   AskJobRef,
   AskJobStatus,
   AskJobResult,
+  ComputeOptions,
   NodeInfo,
   Skill,
   WalletBalance,
@@ -42,4 +45,4 @@ export type {
   RegisterKeyResult,
   MinerInfo,
 } from './types.js'
-export type { KeyPair, PohTx } from './signing.js'
+export type { KeyPair, PohTx, JobPaymentParams } from './signing.js'

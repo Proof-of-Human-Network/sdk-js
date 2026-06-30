@@ -27,11 +27,16 @@ console.log(verdict.verdict, verdict.confidence)
 
 ## Natural language jobs
 
+Skill jobs always require a fee — pass `budget` (POH), `walletAddress`, and
+`privateKeyPem` so the SDK can sign the payment. The node verifies the
+signature and debits the fee before it will run the job at all; it rejects
+the request outright (no job ever runs) without a valid signed payment.
+
 ```ts
 // Ask a question — returns immediately with a job ID
 const ref = await poh.submitJob(
   'What does vitalik.eth write about on Paragraph?',
-  { budget: 0.5, walletAddress: 'poh...' },
+  { budget: 0.5, walletAddress: 'poh...', privateKeyPem: myPrivateKey },
 )
 
 // Wait for the answer
@@ -42,9 +47,33 @@ console.log(result.nlResponse)   // LLM-generated natural language answer
 // One-liner convenience
 const result = await poh.askAndWait(
   'What NFTs does gmoney.eth hold?',
-  { budget: 0.5, walletAddress: 'poh...' },
+  { budget: 0.5, walletAddress: 'poh...', privateKeyPem: myPrivateKey },
 )
 ```
+
+## Compute jobs (your own model + dataset)
+
+Run inference with a model of your choice, optionally grounded in a Hugging
+Face dataset already installed on the node. Like skill jobs, compute jobs
+are never free — `runCompute` always signs a fee payment.
+
+```ts
+const ref = await poh.runCompute('Summarize the top 5 rows', {
+  model:         'llama3.1:8b',
+  dataset:       'some-org/some-dataset', // optional
+  budget:        0.5,                     // POH
+  walletAddress: myAddress,
+  privateKeyPem: myPrivateKey,
+})
+
+const result = await poh.pollJobResult(ref.jobId)
+console.log(result.output)
+```
+
+Before either of these will work, the wallet's signing key must be
+registered with the node once via `registerSigningKey()` (see
+[Signing & transactions](#signing--transactions)) — the node has no way to
+verify a signature for a key it has never seen.
 
 ## Wallet / blockchain
 
@@ -176,7 +205,8 @@ try {
 
 | Method | Description |
 |--------|-------------|
-| `submitJob(question, opts?)` | Submit NL question |
+| `submitJob(question, opts?)` | Submit NL question. Skill jobs always require a fee — pass `budget`, `walletAddress`, `privateKeyPem`. |
+| `runCompute(prompt, opts)` | Submit a job that runs a specific `model` (and optional `dataset`). Always requires a fee. |
 | `getJobStatus(jobId)` | Poll job status |
 | `getJobResult(jobId)` | Fetch completed result |
 | `pollJobResult(jobId, opts?)` | Poll until result ready |
@@ -206,6 +236,8 @@ try {
 | `computeTxHash(tx)` | SHA-256 tx hash |
 | `pemToBytes(pem)` | Decode PEM to bytes |
 | `bytesToPem(bytes, type)` | Encode bytes to PEM |
+| `computeJobPaymentHash(params)` | Canonical hash for a job fee payment (used internally by `submitJob`/`runCompute`) |
+| `signJobPayment(params, privateKeyPem)` | Sign a job fee payment proof (used internally by `submitJob`/`runCompute`) |
 
 ### Node info
 

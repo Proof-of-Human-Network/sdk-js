@@ -5,7 +5,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 
-const { POHClient, POHError } = await import('../dist/index.js')
+const { POHClient, POHError, generateKeyPair } = await import('../dist/index.js')
 
 // ── Mock helpers ──────────────────────────────────────────────────────────────
 
@@ -300,6 +300,92 @@ test('submitJob routes to skill then submits job', async () => {
   })
   const ref = await poh.submitJob('Summarise this')
   assert.equal(ref.jobId, 'jnl-1')
+})
+
+test('submitJob throws when budget > 0 but no privateKeyPem is given', async () => {
+  const poh = client([{ body: { type: 'skill', skillId: 'sk-sum', input: {} } }])
+  await assert.rejects(
+    () => poh.submitJob('Summarise this', { budget: 0.5, walletAddress: 'pohAlice' }),
+    (e) => e instanceof POHError && e.status === 402,
+  )
+})
+
+test('submitJob signs a nonce-bound payment proof when budget > 0', async () => {
+  const { signingPrivateKey } = await generateKeyPair()
+  const bodies = [
+    { type: 'skill', skillId: 'sk-sum', input: { text: 'hello' } },
+    { minerAddress: 'pohMiner', gasPrice: 1, model: 'qwen2.5:1.5b', queueLength: 0, reputation: 1 },
+    { address: 'pohAlice', nonce: 3 },
+    { jobId: 'jnl-1', status: 'queued', skillId: 'sk-sum' },
+  ]
+  let jobBody = null
+  let call = 0
+  const poh = new POHClient({
+    baseUrl: 'http://mock',
+    fetch: async (_url, init) => {
+      const body = bodies[Math.min(call++, bodies.length - 1)]
+      if (init?.body) {
+        const parsed = JSON.parse(init.body)
+        if (parsed.type === 'skill') jobBody = parsed
+      }
+      return new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } })
+    },
+  })
+  const ref = await poh.submitJob('Summarise this', {
+    budget: 0.5,
+    walletAddress: 'pohAlice',
+    privateKeyPem: signingPrivateKey,
+  })
+  assert.equal(ref.jobId, 'jnl-1')
+  assert.equal(jobBody.maxBudget, 500_000_000)
+  assert.equal(jobBody.requesterAddress, 'pohAlice')
+  assert.ok(jobBody.paymentTx?.txHash)
+  assert.ok(jobBody.paymentTx?.signature)
+})
+
+test('runCompute throws when budget is not > 0', async () => {
+  const { signingPrivateKey } = await generateKeyPair()
+  const poh = client([])
+  await assert.rejects(
+    () => poh.runCompute('hi', { model: 'qwen2.5:1.5b', budget: 0, walletAddress: 'pohAlice', privateKeyPem: signingPrivateKey }),
+    (e) => e instanceof POHError && e.status === 402,
+  )
+})
+
+test('runCompute signs a payment proof and posts model/dataset to /job', async () => {
+  const { signingPrivateKey } = await generateKeyPair()
+  const bodies = [
+    { minerAddress: 'pohMiner', gasPrice: 1, model: 'qwen2.5:1.5b', queueLength: 0, reputation: 1 },
+    { address: 'pohAlice', nonce: 7 },
+    { jobId: 'jc-1', status: 'queued' },
+  ]
+  let jobBody = null
+  let call = 0
+  const poh = new POHClient({
+    baseUrl: 'http://mock',
+    fetch: async (_url, init) => {
+      const body = bodies[Math.min(call++, bodies.length - 1)]
+      if (init?.body) {
+        const parsed = JSON.parse(init.body)
+        if (parsed.type === 'compute') jobBody = parsed
+      }
+      return new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } })
+    },
+  })
+  const ref = await poh.runCompute('Summarize the top rows', {
+    model: 'llama3.1:8b',
+    dataset: 'some-org/some-dataset',
+    budget: 0.5,
+    walletAddress: 'pohAlice',
+    privateKeyPem: signingPrivateKey,
+  })
+  assert.equal(ref.jobId, 'jc-1')
+  assert.equal(jobBody.model, 'llama3.1:8b')
+  assert.equal(jobBody.dataset, 'some-org/some-dataset')
+  assert.equal(jobBody.maxBudget, 500_000_000)
+  assert.equal(jobBody.payload.prompt, 'Summarize the top rows')
+  assert.ok(jobBody.paymentTx?.txHash)
+  assert.ok(jobBody.paymentTx?.signature)
 })
 
 test('submitJob throws when no skill matches route', async () => {

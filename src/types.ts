@@ -178,6 +178,29 @@ export interface AskOptions {
    * Omit to let any available miner handle it.
    */
   model?: string
+  /**
+   * PKCS8 PEM Ed25519 private key used to sign the fee payment.
+   * Required when `budget > 0` — skill jobs always require a fee, and the node
+   * rejects the job outright without a valid signed payment proof.
+   */
+  privateKeyPem?: string
+}
+
+// ── Compute jobs (user-specified model + dataset) ───────────────────────────────
+
+export interface ComputeOptions {
+  /** Which model to run, e.g. 'qwen2.5:1.5b', 'llama3.1:8b'. */
+  model: string
+  /** Optional Hugging Face dataset id to ground the answer in (must be installed on the node). */
+  dataset?: string
+  /** Fee in POH (e.g. 0.5 = 0.5 POH). Required — compute jobs are never free. */
+  budget: number
+  /** Wallet address paying the fee. */
+  walletAddress: string
+  /** PKCS8 PEM Ed25519 private key used to sign the fee payment. */
+  privateKeyPem: string
+  /** Optional explicit job id. Auto-generated if omitted. */
+  jobId?: string
 }
 
 // ── Chat ──────────────────────────────────────────────────────────────────────
