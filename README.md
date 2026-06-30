@@ -14,7 +14,10 @@ npm install @poh_network/sdk
 ```ts
 import { POHClient } from '@poh_network/sdk'
 
-const poh = new POHClient({ baseUrl: 'https://bootnode.proofofhuman.ge' })
+const poh = new POHClient({
+  baseUrl: 'https://bootnode.proofofhuman.ge',       // reads + job polling
+  localBaseUrl: 'http://127.0.0.1:3456',             // wallet / tx / job submission
+})
 
 // Single scan
 const { result, brainKey } = await poh.scan('0xabc...')
@@ -103,22 +106,21 @@ import {
   createSigningProof,
 } from '@poh_network/sdk'
 
-// 1. Generate a keypair
-const { signingPrivateKey, signingPublicKey } = await generateKeyPair()
+// 1. Generate a keypair — address is derived from the signing public key
+const kp = await generateKeyPair()
 
-// 2. Register the public key with the node (one-time, per node)
-const proof = await createSigningProof(myAddress, signingPrivateKey)
-await poh.registerSigningKey(myAddress, signingPublicKey, proof)
+// 2. Register the public key with your local node (one-time, per node)
+await poh.registerKeyPair(kp)
 
 // 3. Build, sign, and submit a transfer
-const { nonce } = await poh.getNonce(myAddress)
-const tx     = await buildTransfer(myAddress, recipient, 5.0, nonce + 1)
-const signed = await signTransaction(tx, signingPrivateKey)
+const { nonce } = await poh.getNonce(kp.address)
+const tx     = await buildTransfer(kp.address, recipient, 5.0, nonce + 1)
+const signed = await signTransaction(tx, kp.signingPrivateKey)
 const result = await poh.submitTransaction(signed)
 console.log(result.txHash)
 
 // One-liner convenience (fetches nonce automatically)
-const result = await poh.transfer(myAddress, recipient, 5.0, signingPrivateKey)
+const result = await poh.transfer(kp.address, recipient, 5.0, kp.signingPrivateKey)
 ```
 
 ## Skills
@@ -187,6 +189,7 @@ try {
 | `walletAddress` | `string` | — | Wallet for free-tier accounting |
 | `fetch` | `FetchFn` | `globalThis.fetch` | Custom fetch implementation |
 | `timeout` | `number` | `30000` | Per-request timeout (ms) |
+| `localBaseUrl` | `string` | — | Local miner URL for wallet/tx/job writes (`http://127.0.0.1:3456`) |
 
 ### Scanning
 

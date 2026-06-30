@@ -111,6 +111,7 @@ test('watchJob can be broken early without error', async () => {
 test('POHError is thrown on non-2xx responses', async () => {
   const client = new POHClient({
     baseUrl: 'http://mock',
+    localBaseUrl: 'http://mock',
     fetch: async () => new Response(
       JSON.stringify({ error: 'not found' }),
       { status: 404, headers: { 'Content-Type': 'application/json' } },

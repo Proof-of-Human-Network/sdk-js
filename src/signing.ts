@@ -45,6 +45,18 @@ export interface KeyPair {
   signingPrivateKey: string
   /** Ed25519 public key in SPKI PEM format. Share with the node via registerSigningKey(). */
   signingPublicKey: string
+  /** Canonical `poh…` address cryptographically bound to signingPublicKey. */
+  address: string
+}
+
+/**
+ * Derive the canonical poh address bound to an ed25519 signing public key (SPKI PEM).
+ * Must match `Wallet.deriveAddressFromSigningKey()` on the PoH node.
+ */
+export async function deriveAddressFromSigningKey(signingPublicKey: string): Promise<string> {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(signingPublicKey))
+  const hex = Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('')
+  return 'poh' + hex.slice(0, 40)
 }
 
 /**
@@ -64,9 +76,12 @@ export async function generateKeyPair(): Promise<KeyPair> {
   )
   const privBuf = await crypto.subtle.exportKey('pkcs8', kp.privateKey as CryptoKey)
   const pubBuf  = await crypto.subtle.exportKey('spki',  kp.publicKey  as CryptoKey)
+  const signingPublicKey = bytesToPem(new Uint8Array(pubBuf), 'PUBLIC KEY')
+  const address = await deriveAddressFromSigningKey(signingPublicKey)
   return {
     signingPrivateKey: bytesToPem(new Uint8Array(privBuf), 'PRIVATE KEY'),
-    signingPublicKey:  bytesToPem(new Uint8Array(pubBuf),  'PUBLIC KEY'),
+    signingPublicKey,
+    address,
   }
 }
 
@@ -105,6 +120,19 @@ export async function signData(message: string, privateKeyPem: string): Promise<
  */
 export async function createSigningProof(walletAddress: string, privateKeyPem: string): Promise<string> {
   return signData(walletAddress, privateKeyPem)
+}
+
+/**
+ * Build the rotation proof required to replace an existing registered key.
+ * Signed with the *current* private key over a canonical JSON payload.
+ */
+export async function createRotationProof(
+  address: string,
+  newSigningPublicKey: string,
+  existingPrivateKeyPem: string,
+): Promise<string> {
+  const payload = JSON.stringify({ action: 'rotate-key', address, newSigningPublicKey })
+  return signData(payload, existingPrivateKeyPem)
 }
 
 // ── Transaction ───────────────────────────────────────────────────────────────

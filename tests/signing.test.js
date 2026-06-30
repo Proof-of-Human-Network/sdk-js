@@ -8,8 +8,10 @@ import assert from 'node:assert/strict'
 
 const {
   generateKeyPair,
+  deriveAddressFromSigningKey,
   signData,
   createSigningProof,
+  createRotationProof,
   buildTransfer,
   signTransaction,
   computeTxHash,
@@ -30,12 +32,12 @@ test('pemToBytes / bytesToPem round-trip', () => {
 
 // ── generateKeyPair ───────────────────────────────────────────────────────────
 
-test('generateKeyPair returns valid PEM keys', async () => {
-  const { signingPrivateKey, signingPublicKey } = await generateKeyPair()
-  assert.ok(signingPrivateKey.includes('-----BEGIN PRIVATE KEY-----'))
-  assert.ok(signingPrivateKey.includes('-----END PRIVATE KEY-----'))
-  assert.ok(signingPublicKey.includes('-----BEGIN PUBLIC KEY-----'))
-  assert.ok(signingPublicKey.includes('-----END PUBLIC KEY-----'))
+test('generateKeyPair returns valid PEM keys and derived address', async () => {
+  const kp = await generateKeyPair()
+  assert.ok(kp.signingPrivateKey.includes('-----BEGIN PRIVATE KEY-----'))
+  assert.ok(kp.signingPublicKey.includes('-----BEGIN PUBLIC KEY-----'))
+  assert.match(kp.address, /^poh[a-f0-9]{40}$/)
+  assert.equal(kp.address, await deriveAddressFromSigningKey(kp.signingPublicKey))
 })
 
 test('generateKeyPair produces different keys each call', async () => {

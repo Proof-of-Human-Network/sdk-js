@@ -1,8 +1,10 @@
 export { POHClient, POHError } from './client.js'
 export {
   generateKeyPair,
+  deriveAddressFromSigningKey,
   signData,
   createSigningProof,
+  createRotationProof,
   buildTransfer,
   signTransaction,
   computeTxHash,

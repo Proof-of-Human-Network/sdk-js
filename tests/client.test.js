@@ -22,7 +22,12 @@ function makeFetch(responses) {
 }
 
 function client(responses) {
-  return new POHClient({ baseUrl: 'http://mock', fetch: makeFetch(responses) })
+  return new POHClient({
+    baseUrl: 'http://mock',
+    localBaseUrl: 'http://mock',
+    localBaseUrl: 'http://mock',
+    fetch: makeFetch(responses),
+  })
 }
 
 // ── scan ──────────────────────────────────────────────────────────────────────
@@ -44,6 +49,7 @@ test('scan returns null result for inconclusive', async () => {
 test('scan propagates POHError on 4xx', async () => {
   const poh = new POHClient({
     baseUrl: 'http://mock',
+    localBaseUrl: 'http://mock',
     fetch: async () => new Response(
       JSON.stringify({ error: 'forbidden' }),
       { status: 403, headers: { 'Content-Type': 'application/json' } },
@@ -121,6 +127,7 @@ test('pollBrainVerdict polls until status leaves pending', async () => {
   ]
   const poh = new POHClient({
     baseUrl: 'http://mock',
+    localBaseUrl: 'http://mock',
     fetch: async () => new Response(JSON.stringify(snaps[Math.min(call++, snaps.length - 1)]), {
       status: 200, headers: { 'Content-Type': 'application/json' },
     }),
@@ -140,6 +147,7 @@ test('scanAndVerdict returns scan + resolved verdict', async () => {
   ]
   const poh = new POHClient({
     baseUrl: 'http://mock',
+    localBaseUrl: 'http://mock',
     fetch: async () => new Response(JSON.stringify(responses[Math.min(call++, responses.length - 1)]), {
       status: 200, headers: { 'Content-Type': 'application/json' },
     }),
@@ -232,6 +240,7 @@ test('getTransactionHistory accepts custom limit', async () => {
   let capturedUrl = ''
   const poh = new POHClient({
     baseUrl: 'http://mock',
+    localBaseUrl: 'http://mock',
     fetch: async (url) => {
       capturedUrl = url
       return new Response(JSON.stringify({ address: 'poh123', entries: [] }), {
@@ -270,6 +279,7 @@ test('registerSigningKey posts key and proof', async () => {
   let capturedBody = null
   const poh = new POHClient({
     baseUrl: 'http://mock',
+    localBaseUrl: 'http://mock',
     fetch: async (_url, init) => {
       capturedBody = JSON.parse(init.body)
       return new Response(JSON.stringify({ success: true }), {
@@ -277,11 +287,12 @@ test('registerSigningKey posts key and proof', async () => {
       })
     },
   })
-  const res = await poh.registerSigningKey('pohA', 'pubkey-pem', 'proof-b64')
+  const res = await poh.registerSigningKey('pohA', 'pubkey-pem', 'proof-b64', 'rotate-b64')
   assert.equal(res.success, true)
   assert.equal(capturedBody.address, 'pohA')
   assert.equal(capturedBody.signingPublicKey, 'pubkey-pem')
   assert.equal(capturedBody.proof, 'proof-b64')
+  assert.equal(capturedBody.rotationProof, 'rotate-b64')
 })
 
 // ── Natural language jobs ─────────────────────────────────────────────────────
@@ -294,6 +305,7 @@ test('submitJob routes to skill then submits job', async () => {
   ]
   const poh = new POHClient({
     baseUrl: 'http://mock',
+    localBaseUrl: 'http://mock',
     fetch: async () => new Response(JSON.stringify(bodies[Math.min(call++, bodies.length - 1)]), {
       status: 200, headers: { 'Content-Type': 'application/json' },
     }),
@@ -322,6 +334,7 @@ test('submitJob signs a nonce-bound payment proof when budget > 0', async () => 
   let call = 0
   const poh = new POHClient({
     baseUrl: 'http://mock',
+    localBaseUrl: 'http://mock',
     fetch: async (_url, init) => {
       const body = bodies[Math.min(call++, bodies.length - 1)]
       if (init?.body) {
@@ -363,6 +376,7 @@ test('runCompute signs a payment proof and posts model/dataset to /job', async (
   let call = 0
   const poh = new POHClient({
     baseUrl: 'http://mock',
+    localBaseUrl: 'http://mock',
     fetch: async (_url, init) => {
       const body = bodies[Math.min(call++, bodies.length - 1)]
       if (init?.body) {
@@ -419,6 +433,7 @@ test('getJobResult parses completed NL job result', async () => {
 test('getJobResult returns computing status on HTTP 202', async () => {
   const poh = new POHClient({
     baseUrl: 'http://mock',
+    localBaseUrl: 'http://mock',
     fetch: async () => new Response('', { status: 202, headers: { 'Content-Type': 'application/json' } }),
   })
   const r = await poh.getJobResult('jnl-1')
@@ -434,6 +449,7 @@ test('pollJobResult polls status then fetches result when done', async () => {
   ]
   const poh = new POHClient({
     baseUrl: 'http://mock',
+    localBaseUrl: 'http://mock',
     fetch: async () => new Response(JSON.stringify(responses[Math.min(call++, responses.length - 1)]), {
       status: 200, headers: { 'Content-Type': 'application/json' },
     }),
@@ -452,6 +468,7 @@ test('askAndWait routes, submits and polls to completion', async () => {
   ]
   const poh = new POHClient({
     baseUrl: 'http://mock',
+    localBaseUrl: 'http://mock',
     fetch: async () => new Response(JSON.stringify(responses[Math.min(call++, responses.length - 1)]), {
       status: 200, headers: { 'Content-Type': 'application/json' },
     }),

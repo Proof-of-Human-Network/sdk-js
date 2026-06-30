@@ -53,6 +53,12 @@ export interface POHClientOptions {
   fetch?: FetchFn
   /** Per-request timeout in milliseconds. Default: 30 000 */
   timeout?: number
+  /**
+   * Local miner node URL for state-changing requests (wallet, tx, jobs).
+   * Required when `baseUrl`/`nodes` point at a remote bootnode — those endpoints
+   * are localhost-only on the miner. Example: `http://127.0.0.1:3456`
+   */
+  localBaseUrl?: string
 }
 
 // ── Scan ───────────────────────────────────────────────────────────────────────
@@ -303,6 +309,8 @@ export interface WalletBalance {
 export interface AccountNonce {
   address: string
   nonce: number
+  /** Highest nonce reserved by pending mempool transactions, if any. */
+  pendingNonce?: number
 }
 
 export interface TxHistoryEntry {
