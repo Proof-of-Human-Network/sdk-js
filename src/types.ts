@@ -15,7 +15,7 @@ export interface NodeConfig {
  * Used when `nodes` is omitted and no `baseUrl` is given.
  */
 export const DEFAULT_NODES: NodeConfig[] = [
-  { url: 'https://bootnode.proofofhuman.ge', name: 'Bootnode' },
+  { url: 'https://miner.proofofhuman.ge', name: 'Bootnode' },
   { url: 'https://proofofhuman.ge',          name: 'Main'     },
   { url: 'https://poh.assetux.com',          name: 'Relay'    },
 ]
@@ -342,7 +342,12 @@ export interface PohTxRecord {
 export interface TxSubmitResult {
   ok:        boolean
   txHash:    string
-  queueSize: number
+  queueSize?: number
+  /** True when the node recognised this as a resubmit of an already-known tx
+   *  (duplicate / already mined) rather than a newly-queued one. Safe to treat
+   *  as success — retry with the SAME signed tx, never rebuild at a new nonce. */
+  idempotent?: boolean
+  note?:     string
 }
 
 export interface SendResult {

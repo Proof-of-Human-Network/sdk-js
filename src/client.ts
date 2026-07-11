@@ -777,6 +777,11 @@ export class POHClient {
    * Fetches the current nonce automatically, builds the transaction, signs it,
    * and submits it to the network.
    *
+   * ⚠️ Retry safety: do NOT wrap `transfer()` in a blind retry — each call fetches
+   * a fresh nonce and builds a NEW tx, so a retry after a timeout would send twice.
+   * To retry safely, build+sign once and resubmit the SAME tx via
+   * `submitTransaction()` (the node treats a duplicate as an idempotent success).
+   *
    * @param from           Sender address.
    * @param to             Recipient address.
    * @param amountPOH      Amount in POH units (e.g. 1.5 = 1.5 POH).
