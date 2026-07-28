@@ -140,24 +140,38 @@ export async function createRotationProof(
 export interface PohTx {
   from:      string
   to:        string
-  /** Amount in μPOH (1 POH = 1 000 000 000 μPOH). */
+  /** Amount in raw units of `currency` (μPOH for POH: 1 POH = 1e9; ×100 for 2-decimal stablecoins). */
   amount:    number
   fee:       number
   nonce:     number
   timestamp: number
   memo:      string
+  /** Asset ticker (aiGEL, aiKGS, …). Omitted/undefined for POH — never set it to 'POH'. */
+  currency?: string
   txHash?:   string
   signature?:        string
   signingPublicKey?: string
 }
 
+/** On-chain assets and their decimals — mirror of the node's /api/assets registry. */
+export const ASSET_DECIMALS: Record<string, number> = {
+  POH: 9, aiGEL: 2, aiKGS: 2, aiAMD: 2, aiETB: 2, aiBTN: 2,
+}
+
+export function decimalsOf(currency?: string): number {
+  return ASSET_DECIMALS[currency || 'POH'] ?? 9
+}
+
 /** Compute the SHA-256 transaction hash over canonical fields. */
 export async function computeTxHash(
-  tx: Pick<PohTx, 'from' | 'to' | 'amount' | 'fee' | 'nonce' | 'timestamp' | 'memo'>,
+  tx: Pick<PohTx, 'from' | 'to' | 'amount' | 'fee' | 'nonce' | 'timestamp' | 'memo' | 'currency'>,
 ): Promise<string> {
+  // LOCKSTEP with the node: `currency` joins the preimage after memo ONLY when
+  // non-POH — a POH tx hashes byte-identically to the historical shape.
   const payload = JSON.stringify({
     from: tx.from, to: tx.to, amount: tx.amount,
     fee: tx.fee, nonce: tx.nonce, timestamp: tx.timestamp, memo: tx.memo,
+    ...(tx.currency && tx.currency !== 'POH' ? { currency: tx.currency } : {}),
   })
   const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(payload))
   return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('')
@@ -184,8 +198,15 @@ export async function buildTransfer(
   nonce: number,
   fee = 0,
   memo = '',
+  currency?: string,
 ): Promise<PohTx> {
-  const base = { from, to, amount: Math.round(amountPOH * 1_000_000_000), fee, nonce, timestamp: Date.now(), memo }
+  const cur = currency && currency !== 'POH' ? currency : undefined
+  const base = {
+    from, to,
+    amount: Math.round(amountPOH * 10 ** decimalsOf(cur)),
+    fee, nonce, timestamp: Date.now(), memo,
+    ...(cur ? { currency: cur } : {}),
+  }
   return { ...base, txHash: await computeTxHash(base) }
 }
 
@@ -223,10 +244,12 @@ export interface JobPaymentParams {
   requesterAddress: string
   /** The connected node's wallet address — from `client.getMinerInfo().minerAddress`. */
   minerAddress: string
-  /** Fee amount in μPOH. */
+  /** Fee amount in raw units of `currency` (μPOH when POH). */
   amount: number
   /** Requester's current on-chain nonce — from `client.getNonce(requesterAddress)`. */
   nonce: number
+  /** Fee currency ticker. Omit for POH. The miner receives exactly this currency. */
+  currency?: string
 }
 
 /**
@@ -235,12 +258,14 @@ export interface JobPaymentParams {
  * different job or a higher budget. Must match the node's `computeJobPaymentHash`.
  */
 export async function computeJobPaymentHash(params: JobPaymentParams): Promise<string> {
+  // LOCKSTEP with the node: `currency` is the SIXTH key ONLY when non-POH.
   const payload = JSON.stringify({
     jobId:             params.jobId,
     requesterAddress:  params.requesterAddress,
     minerAddress:      params.minerAddress,
     amount:            params.amount,
     nonce:             params.nonce,
+    ...(params.currency && params.currency !== 'POH' ? { currency: params.currency } : {}),
   })
   const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(payload))
   return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('')

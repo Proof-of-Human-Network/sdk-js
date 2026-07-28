@@ -15,6 +15,7 @@ const {
   buildTransfer,
   signTransaction,
   computeTxHash,
+  computeJobPaymentHash,
   pemToBytes,
   bytesToPem,
 } = await import('../dist/index.js')
@@ -155,4 +156,35 @@ test('signTransaction preserves from, to, amount, nonce, memo', async () => {
   assert.equal(signed.amount, tx.amount)
   assert.equal(signed.nonce, tx.nonce)
   assert.equal(signed.memo, tx.memo)
+})
+
+// ── Multi-currency (stablecoins) ─────────────────────────────────────────────
+
+test('POH tx hash omits currency — byte-identical to the legacy preimage', async () => {
+  const fields = { from: 'pohA', to: 'pohB', amount: 1000, fee: 5, nonce: 1, timestamp: 1700000000000, memo: '' }
+  const legacyPayload = JSON.stringify({
+    from: fields.from, to: fields.to, amount: fields.amount,
+    fee: fields.fee, nonce: fields.nonce, timestamp: fields.timestamp, memo: fields.memo,
+  })
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(legacyPayload))
+  const legacyHash = Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('')
+  assert.equal(await computeTxHash(fields), legacyHash)
+  assert.equal(await computeTxHash({ ...fields, currency: 'POH' }), legacyHash) // POH normalizes away
+})
+
+test('buildTransfer with a stablecoin scales at 2 decimals and carries currency', async () => {
+  const tx = await buildTransfer('pohA', 'pohB', 12.5, 1, 0, '', 'aiGEL')
+  assert.equal(tx.amount, 1250)          // 12.50 aiGEL → 1250 raw (×100)
+  assert.equal(tx.currency, 'aiGEL')
+  // currency changes the hash vs the same POH-shaped tx
+  const pohTx = await buildTransfer('pohA', 'pohB', 12.5, 1)
+  assert.notEqual(tx.txHash, pohTx.txHash)
+})
+
+test('computeJobPaymentHash: currency is the 6th key only when non-POH', async () => {
+  const base = { jobId: 'j1', requesterAddress: 'pohA', minerAddress: 'pohM', amount: 100, nonce: 0 }
+  const pohHash = await computeJobPaymentHash(base)
+  assert.equal(await computeJobPaymentHash({ ...base, currency: 'POH' }), pohHash)
+  const gelHash = await computeJobPaymentHash({ ...base, currency: 'aiGEL' })
+  assert.notEqual(gelHash, pohHash)
 })

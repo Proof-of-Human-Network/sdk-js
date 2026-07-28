@@ -15,7 +15,7 @@ npm install @poh_network/sdk
 import { POHClient } from '@poh_network/sdk'
 
 const poh = new POHClient({
-  baseUrl: 'https://bootnode.proofofhuman.ge',       // reads + job polling
+  baseUrl: 'https://miner.poh.ge',       // reads + job polling
   localBaseUrl: 'http://127.0.0.1:3456',             // wallet / tx / job submission
 })
 
@@ -155,7 +155,7 @@ const { results } = await poh.scanAndWait(['0xaaa...', '0xbbb...'])
 ```ts
 const poh = new POHClient({
   nodes: [
-    'https://bootnode.proofofhuman.ge',
+    'https://miner.poh.ge',
     'https://proofofhuman.ge',
     'https://poh.assetux.com',
   ]
@@ -219,7 +219,8 @@ try {
 
 | Method | Description |
 |--------|-------------|
-| `getBalance(address)` | Wallet balance in μPOH |
+| `getBalance(address)` | Wallet balance in μPOH (+ `assets` map of stablecoin holdings) |
+| `getAssets()` | On-chain asset registry (POH + aiGEL/aiKGS/aiAMD/aiETB/aiBTN) + per-currency gas prices |
 | `getNonce(address)` | Current account nonce |
 | `getTransactionHistory(address, limit?)` | Transaction history |
 | `getPendingTransactions()` | Mempool pending txs |
@@ -253,3 +254,29 @@ try {
 ## License
 
 MIT
+
+
+## Stablecoins (multi-currency)
+
+The chain carries five regional stablecoins alongside POH: `aiGEL`, `aiKGS`,
+`aiAMD`, `aiETB`, `aiBTN` (displayed as αιGEL etc.). They use **2 decimals**
+(1 aiGEL = 100 raw units), while POH keeps 9 (1 POH = 1e9 μPOH).
+
+```ts
+// Transfer 12.50 aiGEL (amount is in the asset's display units)
+await poh.transfer(from, to, 12.5, privateKeyPem, 0, '', 'aiGEL')
+
+// Pay a compute job fee in aiKGS — the miner receives exactly aiKGS
+await poh.runCompute('Summarize…', {
+  model: 'qwen3-1.7b', budget: 5.0, currency: 'aiKGS',
+  walletAddress, privateKeyPem,
+})
+
+// Balances: POH scalar + per-asset map
+const bal = await poh.getBalance(addr)
+// bal.balance → μPOH;  bal.assets → { aiGEL: { raw: 1250, display: 12.5 }, … }
+```
+
+Hash compatibility: a POH transaction/job-payment hashes **exactly** as before
+(`currency` enters the signed preimage only when non-POH), so existing
+integrations keep working unchanged.

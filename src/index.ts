@@ -13,6 +13,15 @@ export {
   computeJobPaymentHash,
   signJobPayment,
 } from './signing.js'
+export {
+  seal,
+  open,
+  sealJSON,
+  openJSON,
+  isEnvelope,
+  deriveEncryptionKeypair,
+} from './chatcrypto.js'
+export type { SealedEnvelope } from './chatcrypto.js'
 export { DEFAULT_NODES } from './types.js'
 export type {
   POHClientOptions,

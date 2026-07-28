@@ -4,7 +4,7 @@ export type FetchFn = (url: string, init?: RequestInit) => Promise<Response>
 
 /** A single PoH network node entry. */
 export interface NodeConfig {
-  /** Full base URL of the miner node, e.g. 'https://miner.proofofhuman.ge' */
+  /** Full base URL of the miner node, e.g. 'https://miner.poh.ge' */
   url:   string
   /** Human-readable label (optional, for debugging). */
   name?: string
@@ -15,7 +15,7 @@ export interface NodeConfig {
  * Used when `nodes` is omitted and no `baseUrl` is given.
  */
 export const DEFAULT_NODES: NodeConfig[] = [
-  { url: 'https://miner.proofofhuman.ge', name: 'Bootnode' },
+  { url: 'https://miner.poh.ge', name: 'Bootnode' },
   { url: 'https://proofofhuman.ge',          name: 'Main'     },
   { url: 'https://poh.assetux.com',          name: 'Relay'    },
 ]
@@ -175,6 +175,12 @@ export interface Method {
 // ── Natural language jobs ──────────────────────────────────────────────────────
 
 export interface AskOptions {
+  /**
+   * Fee currency ticker (aiGEL, aiKGS, aiAMD, aiETB, aiBTN). Omit for POH.
+   * `budget` is then denominated in that currency's display units and the
+   * miner receives exactly that currency.
+   */
+  currency?: string
   /** Budget in POH (e.g. 0.5 = 0.5 POH = 500_000_000 μPOH). Required for paid jobs. */
   budget?: number
   /** Wallet address to charge the budget from. Required when budget > 0. */
@@ -195,6 +201,12 @@ export interface AskOptions {
 // ── Compute jobs (user-specified model + dataset) ───────────────────────────────
 
 export interface ComputeOptions {
+  /**
+   * Fee currency ticker (aiGEL, aiKGS, aiAMD, aiETB, aiBTN). Omit for POH.
+   * `budget` is then denominated in that currency's display units and the
+   * miner receives exactly that currency.
+   */
+  currency?: string
   /** Which model to run, e.g. 'qwen2.5:1.5b', 'llama3.1:8b'. */
   model: string
   /** Optional Hugging Face dataset id to ground the answer in (must be installed on the node). */
@@ -304,6 +316,26 @@ export interface WalletBalance {
   address: string
   /** Balance in μPOH (1 POH = 1 000 000 000 μPOH). */
   balance: number
+  /** Stablecoin holdings: ticker → { raw (integer units, 2dp assets ×100), display }. */
+  assets?: Record<string, { raw: number; display: number }>
+}
+
+/** One on-chain asset from GET /api/assets. */
+export interface AssetInfo {
+  ticker: string
+  decimals: number
+  /** UI name, e.g. 'αιGEL' (the wire ticker stays ASCII: 'aiGEL'). */
+  display: string
+  sign: string
+  iso: string | null
+  country: string | null
+  native: boolean
+}
+
+export interface AssetsResult {
+  assets: AssetInfo[]
+  /** Per-currency gas price (raw units per AI token) currently used by this node. */
+  gasPrices?: Record<string, number>
 }
 
 export interface AccountNonce {
