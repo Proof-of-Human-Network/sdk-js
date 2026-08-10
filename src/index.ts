@@ -22,7 +22,7 @@ export {
   deriveEncryptionKeypair,
 } from './chatcrypto.js'
 export type { SealedEnvelope } from './chatcrypto.js'
-export { DEFAULT_NODES } from './types.js'
+export { DEFAULT_NODES, MAX_ATTACHMENT_BYTES } from './types.js'
 export type {
   POHClientOptions,
   NodeConfig,
@@ -43,6 +43,15 @@ export type {
   AskJobStatus,
   AskJobResult,
   ComputeOptions,
+  ChatOptions,
+  ChatResult,
+  ChatAttachment,
+  CascadeJobSummary,
+  HfDatasetManifest,
+  HfDatasetListResult,
+  HfDatasetDownloadResult,
+  McpServerStatus,
+  McpStatusResult,
   NodeInfo,
   Skill,
   WalletBalance,

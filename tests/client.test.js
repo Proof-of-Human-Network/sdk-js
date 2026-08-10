@@ -402,6 +402,99 @@ test('runCompute signs a payment proof and posts model/dataset to /job', async (
   assert.ok(jobBody.paymentTx?.signature)
 })
 
+test('chat posts message + attachments to /chat/ask', async () => {
+  let posted = null
+  const poh = new POHClient({
+    baseUrl: 'http://mock',
+    localBaseUrl: 'http://mock',
+    fetch: async (_url, init) => {
+      posted = JSON.parse(init.body)
+      return new Response(JSON.stringify({
+        type: 'chat', message: 'ok', cascade: true, tasks: true,
+        jobs: [{ id: 'skill:web_search', kind: 'skill', ok: true }],
+      }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+    },
+  })
+  const r = await poh.chat('weather and image', {
+    attachments: [{ name: 'a.txt', content: 'hello' }],
+    private: true,
+  })
+  assert.equal(posted.message, 'weather and image')
+  assert.equal(posted.attachments[0].name, 'a.txt')
+  assert.equal(r.message, 'ok')
+  assert.equal(r.cascade, true)
+  assert.equal(r.tasks, true)
+})
+
+test('chat surfaces 412 dataset required with body on POHError', async () => {
+  const poh = new POHClient({
+    baseUrl: 'http://mock',
+    localBaseUrl: 'http://mock',
+    fetch: async () => new Response(JSON.stringify({
+      error: 'dataset needed',
+      code: 'HF_DATASET_DOWNLOAD_REQUIRED',
+      datasetId: 'dair-ai/emotion',
+    }), { status: 412, headers: { 'Content-Type': 'application/json' } }),
+  })
+  await assert.rejects(
+    () => poh.chat('use emotion dataset please'),
+    (e) => e instanceof POHError && e.status === 412
+      && e.body?.code === 'HF_DATASET_DOWNLOAD_REQUIRED'
+      && e.body?.datasetId === 'dair-ai/emotion',
+  )
+})
+
+test('runCompute forwards attachments on payload', async () => {
+  const { signingPrivateKey } = await generateKeyPair()
+  const bodies = [
+    { minerAddress: 'pohMiner', gasPrice: 1, model: 'qwen3-1.7b', queueLength: 0, reputation: 1 },
+    { address: 'pohAlice', nonce: 1 },
+    { jobId: 'jc-att', status: 'queued' },
+  ]
+  let jobBody = null
+  let call = 0
+  const poh = new POHClient({
+    baseUrl: 'http://mock',
+    localBaseUrl: 'http://mock',
+    fetch: async (_url, init) => {
+      const body = bodies[Math.min(call++, bodies.length - 1)]
+      if (init?.body) {
+        const parsed = JSON.parse(init.body)
+        if (parsed.type === 'compute') jobBody = parsed
+      }
+      return new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } })
+    },
+  })
+  await poh.runCompute('describe this', {
+    model: 'qwen3vl-2b',
+    budget: 0.1,
+    walletAddress: 'pohAlice',
+    privateKeyPem: signingPrivateKey,
+    attachments: [{ name: 'dot.png', dataUrl: 'data:image/png;base64,aaa' }],
+  })
+  assert.equal(jobBody.payload.attachments[0].name, 'dot.png')
+})
+
+test('listDatasets / getMcpStatus hit the right endpoints', async () => {
+  const urls = []
+  const poh = new POHClient({
+    baseUrl: 'http://mock',
+    localBaseUrl: 'http://mock',
+    fetch: async (url) => {
+      urls.push(url)
+      if (url.includes('/api/hf-dataset')) {
+        return new Response(JSON.stringify({ datasets: [{ id: 'dair-ai/emotion' }] }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+      }
+      return new Response(JSON.stringify({ servers: [], tools: [] }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+    },
+  })
+  const ds = await poh.listDatasets()
+  assert.equal(ds.datasets[0].id, 'dair-ai/emotion')
+  await poh.getMcpStatus()
+  assert.ok(urls.some(u => u.endsWith('/api/hf-dataset')))
+  assert.ok(urls.some(u => u.endsWith('/api/mcp/status')))
+})
+
 test('submitJob throws when no skill matches route', async () => {
   const poh = client([{ body: { type: 'chat', reason: 'No skill matched the question' } }])
   await assert.rejects(

@@ -198,6 +198,28 @@ export interface AskOptions {
   privateKeyPem?: string
 }
 
+// ── File attachments (chat + compute) ─────────────────────────────────────────
+// Matches miner MAX_ATTACHMENT_BYTES (1 MB). Text is inlined; images become
+// filesystem paths for QVAC multimodal models.
+
+/** Max attachment size accepted by the miner (bytes). */
+export const MAX_ATTACHMENT_BYTES = 1 * 1024 * 1024
+
+/**
+ * One file attachment for chat/compute.
+ * Prefer `dataUrl` for images and `content` for text; `contentBase64` for raw bytes.
+ */
+export interface ChatAttachment {
+  name: string
+  mime?: string
+  /** Plain-text body (txt/md/json/csv/code). */
+  content?: string
+  /** Base64-encoded bytes (any type). */
+  contentBase64?: string
+  /** data:<mime>;base64,... — preferred for images from browsers/RN. */
+  dataUrl?: string
+}
+
 // ── Compute jobs (user-specified model + dataset) ───────────────────────────────
 
 export interface ComputeOptions {
@@ -207,7 +229,7 @@ export interface ComputeOptions {
    * miner receives exactly that currency.
    */
   currency?: string
-  /** Which model to run, e.g. 'qwen2.5:1.5b', 'llama3.1:8b'. */
+  /** Which model to run, e.g. 'qwen3-1.7b', 'qwen3vl-2b'. */
   model: string
   /** Optional Hugging Face dataset id to ground the answer in (must be installed on the node). */
   dataset?: string
@@ -219,6 +241,15 @@ export interface ComputeOptions {
   privateKeyPem: string
   /** Optional explicit job id. Auto-generated if omitted. */
   jobId?: string
+  /** Prior conversation turns. */
+  history?: { role: 'user' | 'assistant' | 'system'; content: string }[]
+  /** File attachments (text + images, ≤1 MB each). */
+  attachments?: ChatAttachment[]
+  /**
+   * When false, skip skill/task-cascade auto-routing and run the raw prompt on the model.
+   * Default true (miner routes "search the web…" etc. through skills/cascade).
+   */
+  route?: boolean
 }
 
 // ── Chat ──────────────────────────────────────────────────────────────────────
@@ -236,17 +267,87 @@ export interface ChatOptions {
    * that aren't installed locally on the node.
    */
   private?: boolean
+  /** File attachments (text + images, ≤1 MB). Images auto-select a vision model when needed. */
+  attachments?: ChatAttachment[]
+  /**
+   * Force a dataset id after the user approved a download (from a prior 412
+   * `HF_DATASET_DOWNLOAD_REQUIRED` response).
+   */
+  datasetId?: string
+  /** Wallet address used for chain-history matching / public-job context. */
+  requesterAddress?: string
+}
+
+export interface CascadeJobSummary {
+  id?: string
+  kind?: string
+  skillId?: string
+  server?: string
+  ok?: boolean
+  error?: string
+  ms?: number
 }
 
 export interface ChatResult {
+  /** Discriminator from the miner. Usually 'chat'; may be 'skill' when a paid skill is required. */
+  type?: 'chat' | 'skill' | 'cascade' | 'tasks' | 'dataset' | 'hf-model' | 'sequence'
   message: string
   /** Set when a skill answered the question instead of a plain chat reply. */
   skill?: string
+  skillId?: string
+  /** True when multiple specialists ran (task cascade / multi-skill). */
+  cascade?: boolean
+  /** True when the unified task-cascade planner ran. */
+  tasks?: boolean
+  /** Per-task summaries from a cascade. */
+  jobs?: CascadeJobSummary[]
+  /** Dataset id used or required. */
+  dataset?: string
+  datasetId?: string
   /** True if a peer miner (not this node's local LLM) produced the reply. */
   _fromPeer?: boolean
   /** Set to the provider id (e.g. 'anthropic') when a configured cloud AI provider produced the reply. */
   _fromProvider?: string
+  fromChainHistory?: boolean
   error?: string
+  /** Present on HTTP 412 when a HF dataset must be installed first. */
+  code?: string
+  description?: string
+  estimatedSizeBytes?: number | null
+  installInstructions?: string
+}
+
+// ── HF datasets / MCP status ──────────────────────────────────────────────────
+
+export interface HfDatasetManifest {
+  id: string
+  source?: string
+  installedAt?: number
+  rowCount?: number
+  files?: { name: string; size: number; sha256?: string }[]
+}
+
+export interface HfDatasetListResult {
+  datasets: HfDatasetManifest[]
+}
+
+export interface HfDatasetDownloadResult {
+  ok: boolean
+  manifest?: HfDatasetManifest
+  error?: string
+}
+
+export interface McpServerStatus {
+  id: string
+  transport?: string
+  connected: boolean
+  error?: string | null
+  tools: string[]
+}
+
+export interface McpStatusResult {
+  servers: McpServerStatus[]
+  tools: { name: string; server?: string; tool?: string; description?: string }[]
 }
 
 // ── Feedback ──────────────────────────────────────────────────────────────────

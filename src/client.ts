@@ -30,6 +30,9 @@ import type {
   RegisterKeyResult,
   MinerInfo,
   PohTxRecord,
+  HfDatasetListResult,
+  HfDatasetDownloadResult,
+  McpStatusResult,
 } from './types.js'
 import type { KeyPair, PohTx } from './signing.js'
 import { createSigningProof } from './signing.js'
@@ -41,10 +44,13 @@ import { pollUntilDone, watchJob as watchJobGen } from './poller.js'
 
 export class POHError extends Error {
   readonly status: number
-  constructor(message: string, status: number) {
+  /** Full JSON body when the miner returned structured error data (e.g. 412 dataset prompt). */
+  readonly body?: unknown
+  constructor(message: string, status: number, body?: unknown) {
     super(message)
     this.name   = 'POHError'
     this.status = status
+    this.body   = body
   }
 }
 
@@ -223,8 +229,12 @@ export class POHClient {
       if (!res.ok) {
         const text = await res.text().catch(() => '')
         let msg    = text
-        try { msg = (JSON.parse(text) as { error?: string }).error ?? text } catch { /* raw */ }
-        throw new POHError(msg || `HTTP ${res.status}`, res.status)
+        let parsed: unknown
+        try {
+          parsed = JSON.parse(text)
+          msg = (parsed as { error?: string }).error ?? text
+        } catch { /* raw */ }
+        throw new POHError(msg || `HTTP ${res.status}`, res.status, parsed)
       }
 
       return res.json() as Promise<T>
@@ -420,11 +430,21 @@ export class POHClient {
     const { decimalsOf } = await import('./signing.js')
     const budgetRaw = Math.round((options.budget ?? 0) * 10 ** decimalsOf(feeCurrency))
     const route = await this.request<{
-      type: 'skill' | 'chat'
+      type: 'skill' | 'chat' | 'cascade' | 'tasks' | 'dataset' | 'hf-model' | 'sequence'
       skillId?: string
       input?: object
       reason?: string
+      jobs?: { skillId: string; input?: object }[]
     }>('POST', '/chat/route', { message: question, budget: budgetRaw })
+
+    // Multi-step cascade / dataset / media — free path via chat() (runs on the miner)
+    if (route.type === 'cascade' || route.type === 'tasks' || route.type === 'dataset' || route.type === 'hf-model' || route.type === 'sequence') {
+      throw new POHError(
+        `Route type "${route.type}" is free (task cascade / dataset / media). Use poh.chat() instead of submitJob().`,
+        422,
+        route,
+      )
+    }
 
     if (route.type !== 'skill' || !route.skillId) {
       throw new POHError(
@@ -489,6 +509,9 @@ export class POHClient {
     if (!(budget > 0)) {
       throw new POHError('runCompute: budget must be > 0 — compute jobs always require a fee', 402)
     }
+    if (!prompt && !(options.attachments?.length)) {
+      throw new POHError('runCompute: prompt or attachments required', 400)
+    }
     const jobId  = options.jobId ?? `job-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
     const feeCurrency = options.currency && options.currency !== 'POH' ? options.currency : undefined
     const { signJobPayment, decimalsOf } = await import('./signing.js')
@@ -502,16 +525,24 @@ export class POHClient {
       privateKeyPem,
     )
 
+    const payload: Record<string, unknown> = {
+      prompt: prompt || 'Please analyze the attached file(s).',
+    }
+    if (options.history?.length) payload.history = options.history
+    if (options.attachments?.length) payload.attachments = options.attachments
+    if (options.route === false) payload.route = false
+
     return this.request<AskJobRef>('POST', '/job', {
       id:               jobId,
       type:             'compute',
       model,
       dataset,
-      payload:          { prompt },
+      payload,
       maxBudget:        amount,
       currency:         feeCurrency,
       requesterAddress: walletAddress,
       paymentTx,
+      ...(options.route === false ? { route: false } : {}),
     })
   }
 
@@ -522,23 +553,81 @@ export class POHClient {
    * cloud AI provider, which is also required when requesting a `model` that
    * isn't installed locally on the node.
    *
+   * Task cascade (skills + MCP + datasets + media) runs automatically when the
+   * message needs it — e.g. "weather yesterday and generate an image…".
+   *
+   * Attachments (≤1 MB): text is inlined; images use a vision model path.
+   *
+   * On HTTP 412 with `code: 'HF_DATASET_DOWNLOAD_REQUIRED'`, throws POHError
+   * whose `.body` has `{ datasetId, installInstructions }` — call
+   * {@link downloadDataset} then retry with `{ datasetId }`.
+   *
    * @example
    * const { message } = await poh.chat('What is proof of humanity?')
    *
    * @example
-   * // Use a specific network model, allowing peer relay
-   * const { message } = await poh.chat('Explain this contract', {
-   *   model: 'llama3.1:70b',
-   *   private: false,
+   * const { message, cascade } = await poh.chat(
+   *   'what was the weather yesterday and generate an image with the degree on it'
+   * )
+   *
+   * @example
+   * // Image attachment (data URL)
+   * await poh.chat('What is in this image?', {
+   *   attachments: [{ name: 'shot.png', dataUrl: 'data:image/png;base64,...' }],
    * })
    */
   async chat(message: string, options: ChatOptions = {}): Promise<ChatResult> {
+    if (!message && !(options.attachments?.length)) {
+      throw new POHError('chat: message or attachments required', 400)
+    }
     return this.request<ChatResult>('POST', '/chat/ask', {
-      message,
+      message: message || 'Please analyze the attached file(s).',
       history: options.history ?? [],
       model:   options.model,
       private: options.private ?? true,
+      attachments: options.attachments,
+      datasetId: options.datasetId,
+      requesterAddress: options.requesterAddress ?? this.walletAddress,
     })
+  }
+
+  /**
+   * List Hugging Face datasets installed on the connected miner.
+   * @example const { datasets } = await poh.listDatasets()
+   */
+  async listDatasets(): Promise<HfDatasetListResult> {
+    return this.request<HfDatasetListResult>('GET', '/api/hf-dataset')
+  }
+
+  /**
+   * Download + install a Hugging Face dataset on the miner (row-capped).
+   * @example await poh.downloadDataset('dair-ai/emotion')
+   */
+  async downloadDataset(datasetId: string): Promise<HfDatasetDownloadResult> {
+    if (!datasetId) throw new POHError('downloadDataset: datasetId required', 400)
+    return this.request<HfDatasetDownloadResult>(
+      'POST',
+      `/api/hf-dataset/${encodeURIComponent(datasetId)}/download`,
+    )
+  }
+
+  /**
+   * Remove an installed HF dataset from the miner.
+   */
+  async deleteDataset(datasetId: string): Promise<{ ok: boolean }> {
+    if (!datasetId) throw new POHError('deleteDataset: datasetId required', 400)
+    return this.request<{ ok: boolean }>(
+      'DELETE',
+      `/api/hf-dataset/${encodeURIComponent(datasetId)}`,
+    )
+  }
+
+  /**
+   * Status of configured MCP servers and their tools on the miner.
+   * @example const { servers, tools } = await poh.getMcpStatus()
+   */
+  async getMcpStatus(): Promise<McpStatusResult> {
+    return this.request<McpStatusResult>('GET', '/api/mcp/status')
   }
 
   /** Fetch the current status of a natural language job. */
@@ -584,17 +673,30 @@ export class POHClient {
       const data = await res.json() as {
         jobId: string
         verdict?: string
-        profile?: { skillOutput?: unknown; skillId?: string; tokensUsed?: number; nlResponse?: string }
+        profile?: {
+          skillOutput?: unknown
+          skillId?: string
+          tokensUsed?: number
+          nlResponse?: string
+          computeOutput?: string | null
+        }
         evidence?: unknown
         minerWallet?: string
         error?: string
       }
 
+      // skill jobs → skillOutput / nlResponse; compute jobs → computeOutput
+      const output =
+        data.profile?.skillOutput ??
+        data.profile?.computeOutput ??
+        data.profile?.nlResponse ??
+        null
+
       return {
         jobId:      data.jobId,
         status:     (data.error ? 'error' : 'done') as 'done' | 'error',
-        output:     data.profile?.skillOutput ?? null,
-        nlResponse: data.profile?.nlResponse,
+        output,
+        nlResponse: data.profile?.nlResponse ?? (typeof data.profile?.computeOutput === 'string' ? data.profile.computeOutput : undefined),
         skillId:    data.profile?.skillId,
         tokensUsed: data.profile?.tokensUsed,
         error:      data.error,
