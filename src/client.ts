@@ -1,6 +1,6 @@
 import type {
   AssetsResult,
-  POHClientOptions,
+  DAIClientOptions,
   NodeConfig,
   FetchFn,
   ScanOptions,
@@ -29,12 +29,12 @@ import type {
   TxSubmitResult,
   RegisterKeyResult,
   MinerInfo,
-  PohTxRecord,
+  DAITxRecord,
   HfDatasetListResult,
   HfDatasetDownloadResult,
   McpStatusResult,
 } from './types.js'
-import type { KeyPair, PohTx } from './signing.js'
+import type { KeyPair, DAITx } from './signing.js'
 import { createSigningProof } from './signing.js'
 import { deriveEncryptionKeypair, open as openSealed, isEnvelope } from './chatcrypto.js'
 import { DEFAULT_NODES } from './types.js'
@@ -42,13 +42,13 @@ import { pollUntilDone, watchJob as watchJobGen } from './poller.js'
 
 // ── Error ─────────────────────────────────────────────────────────────────────
 
-export class POHError extends Error {
+export class DAIError extends Error {
   readonly status: number
   /** Full JSON body when the miner returned structured error data (e.g. 412 dataset prompt). */
   readonly body?: unknown
   constructor(message: string, status: number, body?: unknown) {
     super(message)
-    this.name   = 'POHError'
+    this.name   = 'DAIError'
     this.status = status
     this.body   = body
   }
@@ -99,12 +99,12 @@ async function pickFirstAlive(nodes: string[], fetchFn: FetchFn): Promise<string
   for (const url of nodes) {
     try { return await probeNode(url, fetchFn, 4_000) } catch { /* try next */ }
   }
-  throw new Error('All configured PoH nodes are unreachable')
+  throw new Error('All configured DAI nodes are unreachable')
 }
 
 // ── Client ────────────────────────────────────────────────────────────────────
 
-export class POHClient {
+export class DAIClient {
   private readonly _nodes:        string[]
   private readonly _strategy:     'fastest' | 'first-alive'
   private readonly apiKey:        string | undefined
@@ -117,7 +117,7 @@ export class POHClient {
   /** Cached after first resolution so subsequent requests skip the promise chain. */
   private _cachedBaseUrl: string | undefined
 
-  constructor(options: POHClientOptions) {
+  constructor(options: DAIClientOptions) {
     // Resolve fetch: explicit override → globalThis.fetch → error
     const f = options.fetch
       ?? (typeof globalThis !== 'undefined' && (globalThis as { fetch?: FetchFn }).fetch)
@@ -125,7 +125,7 @@ export class POHClient {
 
     if (!f) {
       throw new Error(
-        'POHClient: fetch is unavailable in this environment. ' +
+        'DAIClient: fetch is unavailable in this environment. ' +
         'Pass a fetch implementation via options.fetch (e.g. node-fetch or cross-fetch).',
       )
     }
@@ -190,8 +190,8 @@ export class POHClient {
     if (this._localBaseUrl) return this._localBaseUrl
     const remote = await this._getBaseUrl()
     if (this._isLoopbackUrl(remote)) return remote
-    throw new POHError(
-      'This operation requires a local miner node. Set localBaseUrl: "http://127.0.0.1:3456" in POHClient options.',
+    throw new DAIError(
+      'This operation requires a local miner node. Set localBaseUrl: "http://127.0.0.1:3456" in DAIClient options.',
       403,
     )
   }
@@ -234,13 +234,13 @@ export class POHClient {
           parsed = JSON.parse(text)
           msg = (parsed as { error?: string }).error ?? text
         } catch { /* raw */ }
-        throw new POHError(msg || `HTTP ${res.status}`, res.status, parsed)
+        throw new DAIError(msg || `HTTP ${res.status}`, res.status, parsed)
       }
 
       return res.json() as Promise<T>
     } catch (err) {
       if ((err as Error).name === 'AbortError') {
-        throw new POHError(`Request timed out after ${this.timeout}ms`, 408)
+        throw new DAIError(`Request timed out after ${this.timeout}ms`, 408)
       }
       throw err
     } finally {
@@ -254,7 +254,7 @@ export class POHClient {
    * Scan a single wallet address synchronously.
    *
    * @example
-   * const { result, brainKey } = await poh.scan('0xabc...')
+   * const { result, brainKey } = await dai.scan('0xabc...')
    * // result: true = human, false = not human, null = inconclusive
    */
   async scan(input: string, options: ScanOptions = {}): Promise<ScanResult> {
@@ -270,8 +270,8 @@ export class POHClient {
    * Returns a {jobId} immediately; use pollJob() or watchJob() to get results.
    *
    * @example
-   * const { jobId } = await poh.scanBulk(['0xaaa...', '0xbbb...'])
-   * const results   = await poh.pollJob(jobId)
+   * const { jobId } = await dai.scanBulk(['0xaaa...', '0xbbb...'])
+   * const results   = await dai.pollJob(jobId)
    */
   async scanBulk(
     inputs: string[],
@@ -296,7 +296,7 @@ export class POHClient {
    * Poll a job until it reaches 'done' or 'error', then return the final status.
    *
    * @example
-   * const final = await poh.pollJob(jobId, {
+   * const final = await dai.pollJob(jobId, {
    *   interval: 2000,
    *   onProgress: j => console.log(`${j.percent}%`),
    * })
@@ -311,7 +311,7 @@ export class POHClient {
    * The caller may `break` early to cancel without throwing.
    *
    * @example
-   * for await (const snap of poh.watchJob(jobId)) {
+   * for await (const snap of dai.watchJob(jobId)) {
    *   process.stdout.write(`\r${snap.percent}% (${snap.done}/${snap.total})`)
    * }
    */
@@ -323,7 +323,7 @@ export class POHClient {
    * Convenience: submit a bulk scan and wait for all results in one call.
    *
    * @example
-   * const { results } = await poh.scanAndWait(['0xaaa...', '0xbbb...'])
+   * const { results } = await dai.scanAndWait(['0xaaa...', '0xbbb...'])
    */
   async scanAndWait(
     inputs: string[],
@@ -341,7 +341,7 @@ export class POHClient {
    * brainKey is returned by scan() once the AI evaluation is ready.
    *
    * @example
-   * const { verdict, confidence, reasoning } = await poh.getBrainVerdict(brainKey)
+   * const { verdict, confidence, reasoning } = await dai.getBrainVerdict(brainKey)
    */
   async getBrainVerdict(brainKey: string): Promise<BrainVerdict> {
     return this.request<BrainVerdict>(
@@ -355,7 +355,7 @@ export class POHClient {
    * then return the final verdict.
    *
    * @example
-   * const verdict = await poh.pollBrainVerdict(scan.brainKey!)
+   * const verdict = await dai.pollBrainVerdict(scan.brainKey!)
    * console.log(verdict.verdict, verdict.confidence)
    */
   async pollBrainVerdict(
@@ -370,7 +370,7 @@ export class POHClient {
       const v = await this.getBrainVerdict(brainKey)
       if (v.status !== 'pending') return v
       if (Date.now() + interval > deadline) {
-        throw new POHError(`Brain verdict for ${brainKey} did not resolve within ${timeout}ms`, 408)
+        throw new DAIError(`Brain verdict for ${brainKey} did not resolve within ${timeout}ms`, 408)
       }
       await new Promise(r => setTimeout(r, interval))
     }
@@ -381,7 +381,7 @@ export class POHClient {
    * Returns both the raw scan result and the resolved verdict.
    *
    * @example
-   * const { scan, verdict } = await poh.scanAndVerdict('0xabc...')
+   * const { scan, verdict } = await dai.scanAndVerdict('0xabc...')
    * console.log(verdict.verdict, verdict.confidence)
    */
   async scanAndVerdict(
@@ -418,15 +418,15 @@ export class POHClient {
 
   /**
    * Route a natural language question and submit it as a skill job.
-   * Throws POHError(422) if the router does not match a skill.
+   * Throws DAIError(422) if the router does not match a skill.
    *
    * Skill jobs always require a fee — pass `budget`, `walletAddress`, and
    * `privateKeyPem` so the request can be signed. The node verifies the
    * signature and debits the fee before it will run the job at all.
    */
   async submitJob(question: string, options: AskOptions = {}): Promise<AskJobRef> {
-    const feeCurrency = options.currency && options.currency !== 'POH' ? options.currency : undefined
-    // Budget scales at the fee currency's decimals (μPOH for POH, ×100 for stables)
+    const feeCurrency = options.currency && options.currency !== 'DAI' ? options.currency : undefined
+    // Budget scales at the fee currency's decimals (μDAI for DAI, ×100 for stables)
     const { decimalsOf } = await import('./signing.js')
     const budgetRaw = Math.round((options.budget ?? 0) * 10 ** decimalsOf(feeCurrency))
     const route = await this.request<{
@@ -439,15 +439,15 @@ export class POHClient {
 
     // Multi-step cascade / dataset / media — free path via chat() (runs on the miner)
     if (route.type === 'cascade' || route.type === 'tasks' || route.type === 'dataset' || route.type === 'hf-model' || route.type === 'sequence') {
-      throw new POHError(
-        `Route type "${route.type}" is free (task cascade / dataset / media). Use poh.chat() instead of submitJob().`,
+      throw new DAIError(
+        `Route type "${route.type}" is free (task cascade / dataset / media). Use dai.chat() instead of submitJob().`,
         422,
         route,
       )
     }
 
     if (route.type !== 'skill' || !route.skillId) {
-      throw new POHError(
+      throw new DAIError(
         route.reason ?? 'No skill matched the question',
         422,
       )
@@ -459,7 +459,7 @@ export class POHClient {
     let paymentTx: { txHash: string; signature: string } | undefined
     if (budgetRaw > 0) {
       if (!requesterAddress || !options.privateKeyPem) {
-        throw new POHError(
+        throw new DAIError(
           'submitJob: walletAddress and privateKeyPem are required when budget > 0 — skill jobs always require a signed fee.',
           402,
         )
@@ -495,25 +495,25 @@ export class POHClient {
    * it carries a valid signed fee payment.
    *
    * @example
-   * const { jobId } = await poh.runCompute('Summarize the top 5 rows', {
+   * const { jobId } = await dai.runCompute('Summarize the top 5 rows', {
    *   model: 'llama3.1:8b',
    *   dataset: 'some-org/some-dataset',
    *   budget: 0.5,
    *   walletAddress: myAddress,
    *   privateKeyPem: myPrivateKey,
    * })
-   * const result = await poh.pollJobResult(jobId)
+   * const result = await dai.pollJobResult(jobId)
    */
   async runCompute(prompt: string, options: ComputeOptions): Promise<AskJobRef> {
     const { model, dataset, budget, walletAddress, privateKeyPem } = options
     if (!(budget > 0)) {
-      throw new POHError('runCompute: budget must be > 0 — compute jobs always require a fee', 402)
+      throw new DAIError('runCompute: budget must be > 0 — compute jobs always require a fee', 402)
     }
     if (!prompt && !(options.attachments?.length)) {
-      throw new POHError('runCompute: prompt or attachments required', 400)
+      throw new DAIError('runCompute: prompt or attachments required', 400)
     }
     const jobId  = options.jobId ?? `job-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
-    const feeCurrency = options.currency && options.currency !== 'POH' ? options.currency : undefined
+    const feeCurrency = options.currency && options.currency !== 'DAI' ? options.currency : undefined
     const { signJobPayment, decimalsOf } = await import('./signing.js')
     const amount = Math.round(budget * 10 ** decimalsOf(feeCurrency))
     const [{ minerAddress }, { nonce }] = await Promise.all([
@@ -558,27 +558,27 @@ export class POHClient {
    *
    * Attachments (≤1 MB): text is inlined; images use a vision model path.
    *
-   * On HTTP 412 with `code: 'HF_DATASET_DOWNLOAD_REQUIRED'`, throws POHError
+   * On HTTP 412 with `code: 'HF_DATASET_DOWNLOAD_REQUIRED'`, throws DAIError
    * whose `.body` has `{ datasetId, installInstructions }` — call
    * {@link downloadDataset} then retry with `{ datasetId }`.
    *
    * @example
-   * const { message } = await poh.chat('What is proof of humanity?')
+   * const { message } = await dai.chat('What is decentralized artificial intelligence?')
    *
    * @example
-   * const { message, cascade } = await poh.chat(
+   * const { message, cascade } = await dai.chat(
    *   'what was the weather yesterday and generate an image with the degree on it'
    * )
    *
    * @example
    * // Image attachment (data URL)
-   * await poh.chat('What is in this image?', {
+   * await dai.chat('What is in this image?', {
    *   attachments: [{ name: 'shot.png', dataUrl: 'data:image/png;base64,...' }],
    * })
    */
   async chat(message: string, options: ChatOptions = {}): Promise<ChatResult> {
     if (!message && !(options.attachments?.length)) {
-      throw new POHError('chat: message or attachments required', 400)
+      throw new DAIError('chat: message or attachments required', 400)
     }
     return this.request<ChatResult>('POST', '/chat/ask', {
       message: message || 'Please analyze the attached file(s).',
@@ -593,7 +593,7 @@ export class POHClient {
 
   /**
    * List Hugging Face datasets installed on the connected miner.
-   * @example const { datasets } = await poh.listDatasets()
+   * @example const { datasets } = await dai.listDatasets()
    */
   async listDatasets(): Promise<HfDatasetListResult> {
     return this.request<HfDatasetListResult>('GET', '/api/hf-dataset')
@@ -601,10 +601,10 @@ export class POHClient {
 
   /**
    * Download + install a Hugging Face dataset on the miner (row-capped).
-   * @example await poh.downloadDataset('dair-ai/emotion')
+   * @example await dai.downloadDataset('dair-ai/emotion')
    */
   async downloadDataset(datasetId: string): Promise<HfDatasetDownloadResult> {
-    if (!datasetId) throw new POHError('downloadDataset: datasetId required', 400)
+    if (!datasetId) throw new DAIError('downloadDataset: datasetId required', 400)
     return this.request<HfDatasetDownloadResult>(
       'POST',
       `/api/hf-dataset/${encodeURIComponent(datasetId)}/download`,
@@ -615,7 +615,7 @@ export class POHClient {
    * Remove an installed HF dataset from the miner.
    */
   async deleteDataset(datasetId: string): Promise<{ ok: boolean }> {
-    if (!datasetId) throw new POHError('deleteDataset: datasetId required', 400)
+    if (!datasetId) throw new DAIError('deleteDataset: datasetId required', 400)
     return this.request<{ ok: boolean }>(
       'DELETE',
       `/api/hf-dataset/${encodeURIComponent(datasetId)}`,
@@ -624,7 +624,7 @@ export class POHClient {
 
   /**
    * Status of configured MCP servers and their tools on the miner.
-   * @example const { servers, tools } = await poh.getMcpStatus()
+   * @example const { servers, tools } = await dai.getMcpStatus()
    */
   async getMcpStatus(): Promise<McpStatusResult> {
     return this.request<McpStatusResult>('GET', '/api/mcp/status')
@@ -667,7 +667,7 @@ export class POHClient {
         const text = await res.text().catch(() => '')
         let msg    = text
         try { msg = (JSON.parse(text) as { error?: string }).error ?? text } catch { /* raw */ }
-        throw new POHError(msg || `HTTP ${res.status}`, res.status)
+        throw new DAIError(msg || `HTTP ${res.status}`, res.status)
       }
 
       const data = await res.json() as {
@@ -703,7 +703,7 @@ export class POHClient {
       }
     } catch (err) {
       if ((err as Error).name === 'AbortError') {
-        throw new POHError(`Request timed out after ${this.timeout}ms`, 408)
+        throw new DAIError(`Request timed out after ${this.timeout}ms`, 408)
       }
       throw err
     } finally {
@@ -726,7 +726,7 @@ export class POHClient {
       const s = await this.getJobStatus(jobId)
       if (s.status === 'done' || s.status === 'error') return this.getJobResult(jobId)
       if (Date.now() + interval > deadline) {
-        throw new POHError(`Job ${jobId} did not complete within ${timeout}ms`, 408)
+        throw new DAIError(`Job ${jobId} did not complete within ${timeout}ms`, 408)
       }
       await new Promise(r => setTimeout(r, interval))
     }
@@ -736,9 +736,9 @@ export class POHClient {
    * Route, submit, and wait for a natural language job, returning the final result.
    *
    * @example
-   * const result = await poh.askAndWait('Summarise the latest posts from vitalik.eth', {
+   * const result = await dai.askAndWait('Summarise the latest posts from vitalik.eth', {
    *   budget: 0.5,
-   *   walletAddress: 'poh...',
+   *   walletAddress: 'dai...',
    * })
    * console.log(result.nlResponse ?? result.output)
    */
@@ -757,7 +757,7 @@ export class POHClient {
    * Each job can only be rated once — a second call returns HTTP 409.
    *
    * @example
-   * await poh.submitFeedback(jobId, 5)
+   * await dai.submitFeedback(jobId, 5)
    */
   async submitFeedback(jobId: string, stars: number, comment?: string): Promise<FeedbackResult> {
     return this.request<FeedbackResult>('POST', `/api/jobs/${encodeURIComponent(jobId)}/feedback`, {
@@ -789,15 +789,15 @@ export class POHClient {
   // ── Wallet / blockchain ────────────────────────────────────────────────────
 
   /**
-   * Get the POH balance for an address.
-   * Balance is returned in μPOH (1 POH = 1 000 000 000 μPOH).
+   * Get the DAI balance for an address.
+   * Balance is returned in μDAI (1 DAI = 1 000 000 000 μDAI).
    */
   async getBalance(address: string): Promise<WalletBalance> {
     return this.request<WalletBalance>('GET', `/api/wallet/balance?address=${encodeURIComponent(address)}`)
   }
 
   /**
-   * List every on-chain asset (POH + stablecoins) with decimals, display names
+   * List every on-chain asset (DAI + stablecoins) with decimals, display names
    * and the node's per-currency gas prices.
    */
   async getAssets(): Promise<AssetsResult> {
@@ -825,7 +825,7 @@ export class POHClient {
    * Get all raw transaction records involving an address
    * (both submissions by this node and transfers).
    */
-  async getTransactions(address: string): Promise<{ address: string; transactions: PohTxRecord[] }> {
+  async getTransactions(address: string): Promise<{ address: string; transactions: DAITxRecord[] }> {
     return this.request('GET', `/api/wallet/transactions?address=${encodeURIComponent(address)}`)
   }
 
@@ -837,7 +837,7 @@ export class POHClient {
   }
 
   /**
-   * Submit a pre-signed PoH transaction to the network.
+   * Submit a pre-signed DAI transaction to the network.
    *
    * Build and sign the transaction client-side using `buildTransfer()` and
    * `signTransaction()` from `@poh_network/sdk/signing`, then pass the result here.
@@ -848,12 +848,12 @@ export class POHClient {
    * @example
    * import { buildTransfer, signTransaction } from '@poh_network/sdk'
    *
-   * const { nonce } = await poh.getNonce(myAddress)
+   * const { nonce } = await dai.getNonce(myAddress)
    * const tx = await buildTransfer(myAddress, recipient, 1.5, nonce + 1)
    * const signed = await signTransaction(tx, myPrivateKeyPem)
-   * const { txHash } = await poh.submitTransaction(signed)
+   * const { txHash } = await dai.submitTransaction(signed)
    */
-  async submitTransaction(tx: PohTx): Promise<TxSubmitResult> {
+  async submitTransaction(tx: DAITx): Promise<TxSubmitResult> {
     return this.request<TxSubmitResult>('POST', '/api/tx/submit', tx)
   }
 
@@ -869,7 +869,7 @@ export class POHClient {
    *
    * const kp = await generateKeyPair()
    * const proof = await createSigningProof(kp.address, kp.signingPrivateKey)
-   * await poh.registerSigningKey(kp.address, kp.signingPublicKey, proof)
+   * await dai.registerSigningKey(kp.address, kp.signingPublicKey, proof)
    */
   async registerSigningKey(
     address: string,
@@ -914,7 +914,7 @@ export class POHClient {
   }
 
   /**
-   * Convenience: build, sign, and submit a POH transfer in one call.
+   * Convenience: build, sign, and submit a DAI transfer in one call.
    *
    * Fetches the current nonce automatically, builds the transaction, signs it,
    * and submits it to the network.
@@ -926,18 +926,18 @@ export class POHClient {
    *
    * @param from           Sender address.
    * @param to             Recipient address.
-   * @param amountPOH      Amount in POH units (e.g. 1.5 = 1.5 POH).
+   * @param amountDAI      Amount in DAI units (e.g. 1.5 = 1.5 DAI).
    * @param privateKeyPem  PKCS8 PEM private key for signing.
-   * @param fee            Miner fee in μPOH (default 0).
+   * @param fee            Miner fee in μDAI (default 0).
    * @param memo           Optional memo string.
    *
    * @example
-   * const { txHash } = await poh.transfer('pohAbc...', 'pohXyz...', 5.0, myPrivKey)
+   * const { txHash } = await dai.transfer('daiAbc...', 'daiXyz...', 5.0, myPrivKey)
    */
   async transfer(
     from: string,
     to: string,
-    amountPOH: number,
+    amountDAI: number,
     privateKeyPem: string,
     fee = 0,
     memo = '',
@@ -946,9 +946,9 @@ export class POHClient {
     const { buildTransfer, signTransaction } = await import('./signing.js')
     const { nonce, pendingNonce } = await this.getNonce(from)
     const nextNonce = (pendingNonce ?? nonce) + 1
-    // amount is in DISPLAY units of `currency` (POH by default) — buildTransfer
-    // scales by the asset's own decimals and applies the omit-when-POH hash rule.
-    const tx     = await buildTransfer(from, to, amountPOH, nextNonce, fee, memo, currency)
+    // amount is in DISPLAY units of `currency` (DAI by default) — buildTransfer
+    // scales by the asset's own decimals and applies the omit-when-DAI hash rule.
+    const tx     = await buildTransfer(from, to, amountDAI, nextNonce, fee, memo, currency)
     const signed = await signTransaction(tx, privateKeyPem)
     return this.submitTransaction(signed)
   }

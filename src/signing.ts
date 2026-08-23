@@ -1,7 +1,7 @@
 /**
- * PoH signing and transaction utilities.
+ * DAI signing and transaction utilities.
  *
- * Key format: Ed25519 PEM (PKCS8 private / SPKI public), matching the PoH node.
+ * Key format: Ed25519 PEM (PKCS8 private / SPKI public), matching the DAI node.
  *
  * Runtime requirements:
  *   - Node.js 18+ (Web Crypto API with Ed25519 support)
@@ -45,24 +45,24 @@ export interface KeyPair {
   signingPrivateKey: string
   /** Ed25519 public key in SPKI PEM format. Share with the node via registerSigningKey(). */
   signingPublicKey: string
-  /** Canonical `poh…` address cryptographically bound to signingPublicKey. */
+  /** Canonical `dai…` address cryptographically bound to signingPublicKey. */
   address: string
 }
 
 /**
- * Derive the canonical poh address bound to an ed25519 signing public key (SPKI PEM).
- * Must match `Wallet.deriveAddressFromSigningKey()` on the PoH node.
+ * Derive the canonical dai address bound to an ed25519 signing public key (SPKI PEM).
+ * Must match `Wallet.deriveAddressFromSigningKey()` on the DAI node.
  */
 export async function deriveAddressFromSigningKey(signingPublicKey: string): Promise<string> {
   const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(signingPublicKey))
   const hex = Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('')
-  return 'poh' + hex.slice(0, 40)
+  return 'dai' + hex.slice(0, 40)
 }
 
 /**
  * Generate a fresh Ed25519 signing keypair.
  *
- * The returned PEM keys are compatible with the PoH node and with
+ * The returned PEM keys are compatible with the DAI node and with
  * `signData()` / `signTransaction()`.
  *
  * @example
@@ -100,7 +100,7 @@ async function importPrivKey(pem: string): Promise<CryptoKey> {
 
 /**
  * Sign an arbitrary UTF-8 message with an Ed25519 private key (PKCS8 PEM).
- * Returns a base64-encoded signature, matching `Wallet.sign()` on the PoH node.
+ * Returns a base64-encoded signature, matching `Wallet.sign()` on the DAI node.
  */
 export async function signData(message: string, privateKeyPem: string): Promise<string> {
   const key = await importPrivKey(privateKeyPem)
@@ -137,16 +137,16 @@ export async function createRotationProof(
 
 // ── Transaction ───────────────────────────────────────────────────────────────
 
-export interface PohTx {
+export interface DAITx {
   from:      string
   to:        string
-  /** Amount in raw units of `currency` (μPOH for POH: 1 POH = 1e9; ×100 for 2-decimal stablecoins). */
+  /** Amount in raw units of `currency` (μDAI for DAI: 1 DAI = 1e9; ×100 for 2-decimal stablecoins). */
   amount:    number
   fee:       number
   nonce:     number
   timestamp: number
   memo:      string
-  /** Asset ticker (aiGEL, aiKGS, …). Omitted/undefined for POH — never set it to 'POH'. */
+  /** Asset ticker (aiGEL, aiKGS, …). Omitted/undefined for DAI — never set it to 'DAI'. */
   currency?: string
   txHash?:   string
   signature?:        string
@@ -155,55 +155,55 @@ export interface PohTx {
 
 /** On-chain assets and their decimals — mirror of the node's /api/assets registry. */
 export const ASSET_DECIMALS: Record<string, number> = {
-  POH: 9, aiGEL: 2, aiKGS: 2, aiAMD: 2, aiETB: 2, aiBTN: 2,
+  DAI: 9, aiGEL: 2, aiKGS: 2, aiAMD: 2, aiETB: 2, aiBTN: 2,
 }
 
 export function decimalsOf(currency?: string): number {
-  return ASSET_DECIMALS[currency || 'POH'] ?? 9
+  return ASSET_DECIMALS[currency || 'DAI'] ?? 9
 }
 
 /** Compute the SHA-256 transaction hash over canonical fields. */
 export async function computeTxHash(
-  tx: Pick<PohTx, 'from' | 'to' | 'amount' | 'fee' | 'nonce' | 'timestamp' | 'memo' | 'currency'>,
+  tx: Pick<DAITx, 'from' | 'to' | 'amount' | 'fee' | 'nonce' | 'timestamp' | 'memo' | 'currency'>,
 ): Promise<string> {
   // LOCKSTEP with the node: `currency` joins the preimage after memo ONLY when
-  // non-POH — a POH tx hashes byte-identically to the historical shape.
+  // non-DAI — a DAI tx hashes byte-identically to the historical shape.
   const payload = JSON.stringify({
     from: tx.from, to: tx.to, amount: tx.amount,
     fee: tx.fee, nonce: tx.nonce, timestamp: tx.timestamp, memo: tx.memo,
-    ...(tx.currency && tx.currency !== 'POH' ? { currency: tx.currency } : {}),
+    ...(tx.currency && tx.currency !== 'DAI' ? { currency: tx.currency } : {}),
   })
   const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(payload))
   return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('')
 }
 
 /**
- * Build an unsigned PoH transfer transaction.
+ * Build an unsigned DAI transfer transaction.
  *
- * @param from       Sender address (`poh...`).
+ * @param from       Sender address (`dai...`).
  * @param to         Recipient address.
- * @param amountPOH  Amount in POH units (e.g. 1.5 → 1 500 000 000 μPOH).
+ * @param amountDAI  Amount in DAI units (e.g. 1.5 → 1 500 000 000 μDAI).
  * @param nonce      Sender's current nonce + 1. Fetch via `client.getNonce(address)`.
- * @param fee        Miner fee in μPOH (default 0).
+ * @param fee        Miner fee in μDAI (default 0).
  * @param memo       Optional memo string.
  *
  * @example
- * const { nonce } = await poh.getNonce(myAddress)
+ * const { nonce } = await dai.getNonce(myAddress)
  * const tx = await buildTransfer(myAddress, recipient, 5.0, nonce + 1)
  */
 export async function buildTransfer(
   from: string,
   to: string,
-  amountPOH: number,
+  amountDAI: number,
   nonce: number,
   fee = 0,
   memo = '',
   currency?: string,
-): Promise<PohTx> {
-  const cur = currency && currency !== 'POH' ? currency : undefined
+): Promise<DAITx> {
+  const cur = currency && currency !== 'DAI' ? currency : undefined
   const base = {
     from, to,
-    amount: Math.round(amountPOH * 10 ** decimalsOf(cur)),
+    amount: Math.round(amountDAI * 10 ** decimalsOf(cur)),
     fee, nonce, timestamp: Date.now(), memo,
     ...(cur ? { currency: cur } : {}),
   }
@@ -216,9 +216,9 @@ export async function buildTransfer(
  * @example
  * const tx     = await buildTransfer(from, to, 5.0, nonce + 1)
  * const signed = await signTransaction(tx, myPrivateKeyPem)
- * const result = await poh.submitTransaction(signed)
+ * const result = await dai.submitTransaction(signed)
  */
-export async function signTransaction(tx: PohTx, privateKeyPem: string): Promise<PohTx> {
+export async function signTransaction(tx: DAITx, privateKeyPem: string): Promise<DAITx> {
   if (!tx.txHash) throw new Error('tx.txHash missing — call buildTransfer() first')
   const signature = await signData(tx.txHash, privateKeyPem)
   // Derive the public key: export private key as JWK (contains 'x' = public key bytes),
@@ -244,11 +244,11 @@ export interface JobPaymentParams {
   requesterAddress: string
   /** The connected node's wallet address — from `client.getMinerInfo().minerAddress`. */
   minerAddress: string
-  /** Fee amount in raw units of `currency` (μPOH when POH). */
+  /** Fee amount in raw units of `currency` (μDAI when DAI). */
   amount: number
   /** Requester's current on-chain nonce — from `client.getNonce(requesterAddress)`. */
   nonce: number
-  /** Fee currency ticker. Omit for POH. The miner receives exactly this currency. */
+  /** Fee currency ticker. Omit for DAI. The miner receives exactly this currency. */
   currency?: string
 }
 
@@ -258,14 +258,14 @@ export interface JobPaymentParams {
  * different job or a higher budget. Must match the node's `computeJobPaymentHash`.
  */
 export async function computeJobPaymentHash(params: JobPaymentParams): Promise<string> {
-  // LOCKSTEP with the node: `currency` is the SIXTH key ONLY when non-POH.
+  // LOCKSTEP with the node: `currency` is the SIXTH key ONLY when non-DAI.
   const payload = JSON.stringify({
     jobId:             params.jobId,
     requesterAddress:  params.requesterAddress,
     minerAddress:      params.minerAddress,
     amount:            params.amount,
     nonce:             params.nonce,
-    ...(params.currency && params.currency !== 'POH' ? { currency: params.currency } : {}),
+    ...(params.currency && params.currency !== 'DAI' ? { currency: params.currency } : {}),
   })
   const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(payload))
   return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('')
@@ -278,8 +278,8 @@ export async function computeJobPaymentHash(params: JobPaymentParams): Promise<s
  * balance before it will run the job at all.
  *
  * @example
- * const { minerAddress } = await poh.getMinerInfo()
- * const { nonce } = await poh.getNonce(myAddress)
+ * const { minerAddress } = await dai.getMinerInfo()
+ * const { nonce } = await dai.getNonce(myAddress)
  * const paymentTx = await signJobPayment(
  *   { jobId, requesterAddress: myAddress, minerAddress, amount: 500_000_000, nonce },
  *   myPrivateKeyPem,

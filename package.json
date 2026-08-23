@@ -1,10 +1,10 @@
 {
   "name": "@poh_network/sdk",
   "version": "0.7.0",
-  "description": "Proof of Human SDK — scan wallets for human identity",
+  "description": "Decentralized Artificial Intelligence SDK — scan wallets for human identity",
   "keywords": [
-    "proof-of-human",
-    "poh",
+    "decentralized-artificial-intelligence",
+    "dai",
     "identity",
     "wallet",
     "solana",

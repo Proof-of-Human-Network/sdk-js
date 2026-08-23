@@ -5,9 +5,9 @@ import assert   from 'node:assert/strict'
 
 // Import from built dist so tests validate the actual published output
 // Run `npm run build` before running tests.
-const { POHClient, POHError } = await import('../dist/index.js')
+const { DAIClient, DAIError } = await import('../dist/index.js')
 
-// ── pollUntilDone via POHClient.pollJob ────────────────────────────────────
+// ── pollUntilDone via DAIClient.pollJob ────────────────────────────────────
 
 test('pollJob resolves when job reaches done', async () => {
   let calls = 0
@@ -19,7 +19,7 @@ test('pollJob resolves when job reaches done', async () => {
     ], errors: [], createdAt: '', completedAt: new Date().toISOString() },
   ]
 
-  const client = new POHClient({
+  const client = new DAIClient({
     baseUrl: 'http://mock',
     fetch: async (url) => {
       const snap = snapshots[Math.min(calls++, snapshots.length - 1)]
@@ -34,7 +34,7 @@ test('pollJob resolves when job reaches done', async () => {
 })
 
 test('pollJob stops on error status', async () => {
-  const client = new POHClient({
+  const client = new DAIClient({
     baseUrl: 'http://mock',
     fetch: async () => new Response(
       JSON.stringify({ jobId: 'j2', status: 'error', total: 1, done: 0, percent: 0, results: [], errors: ['something failed'], createdAt: '' }),
@@ -48,7 +48,7 @@ test('pollJob stops on error status', async () => {
 })
 
 test('pollJob throws when timeout exceeded', async () => {
-  const client = new POHClient({
+  const client = new DAIClient({
     baseUrl: 'http://mock',
     fetch: async () => new Response(
       JSON.stringify({ jobId: 'j3', status: 'processing', total: 5, done: 1, percent: 20, results: [], errors: [], createdAt: '' }),
@@ -72,7 +72,7 @@ test('watchJob yields snapshots until done', async () => {
     { jobId: 'j4', status: 'done',       total: 3, done: 3, percent: 100, results: [], errors: [], createdAt: '', completedAt: '' },
   ]
 
-  const client = new POHClient({
+  const client = new DAIClient({
     baseUrl: 'http://mock',
     fetch: async () => new Response(
       JSON.stringify(snaps[call++] ?? snaps[snaps.length - 1]),
@@ -89,7 +89,7 @@ test('watchJob yields snapshots until done', async () => {
 })
 
 test('watchJob can be broken early without error', async () => {
-  const client = new POHClient({
+  const client = new DAIClient({
     baseUrl: 'http://mock',
     fetch: async () => new Response(
       JSON.stringify({ jobId: 'j5', status: 'processing', total: 10, done: 1, percent: 10, results: [], errors: [], createdAt: '' }),
@@ -106,10 +106,10 @@ test('watchJob can be broken early without error', async () => {
   assert.equal(seen.length, 2)
 })
 
-// ── POHError ───────────────────────────────────────────────────────────────
+// ── DAIError ───────────────────────────────────────────────────────────────
 
-test('POHError is thrown on non-2xx responses', async () => {
-  const client = new POHClient({
+test('DAIError is thrown on non-2xx responses', async () => {
+  const client = new DAIClient({
     baseUrl: 'http://mock',
     localBaseUrl: 'http://mock',
     fetch: async () => new Response(
@@ -120,11 +120,11 @@ test('POHError is thrown on non-2xx responses', async () => {
 
   await assert.rejects(
     () => client.scan('0xabc'),
-    (err) => err instanceof POHError && err.status === 404 && err.message === 'not found',
+    (err) => err instanceof DAIError && err.status === 404 && err.message === 'not found',
   )
 })
 
-// ── POHClient constructor ──────────────────────────────────────────────────
+// ── DAIClient constructor ──────────────────────────────────────────────────
 
 test('constructor throws when fetch is unavailable', () => {
   const origFetch = globalThis.fetch
@@ -132,7 +132,7 @@ test('constructor throws when fetch is unavailable', () => {
     // @ts-ignore — simulate environment without fetch
     delete globalThis.fetch
     assert.throws(
-      () => new POHClient({ baseUrl: 'http://example.com' }),
+      () => new DAIClient({ baseUrl: 'http://example.com' }),
       /fetch is unavailable/,
     )
   } finally {
@@ -141,6 +141,6 @@ test('constructor throws when fetch is unavailable', () => {
 })
 
 test('constructor trims trailing slash from baseUrl', () => {
-  const c = new POHClient({ baseUrl: 'https://api.example.com/', fetch: () => Promise.resolve(new Response('{}')) })
+  const c = new DAIClient({ baseUrl: 'https://api.example.com/', fetch: () => Promise.resolve(new Response('{}')) })
   assert.equal(c.activeNode, 'https://api.example.com')
 })

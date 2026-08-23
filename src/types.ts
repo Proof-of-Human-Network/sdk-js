@@ -2,29 +2,28 @@
 
 export type FetchFn = (url: string, init?: RequestInit) => Promise<Response>
 
-/** A single PoH network node entry. */
+/** A single DAI network node entry. */
 export interface NodeConfig {
-  /** Full base URL of the miner node, e.g. 'https://miner.poh.ge' */
+  /** Full base URL of the miner node, e.g. 'https://miner.iamai.kg' */
   url:   string
   /** Human-readable label (optional, for debugging). */
   name?: string
 }
 
 /**
- * Default public bootstrap nodes for the PoH network.
+ * Default public bootstrap nodes for the DAI network.
  * Used when `nodes` is omitted and no `baseUrl` is given.
  */
 export const DEFAULT_NODES: NodeConfig[] = [
-  { url: 'https://miner.poh.ge', name: 'Bootnode' },
-  { url: 'https://proofofhuman.ge',          name: 'Main'     },
-  { url: 'https://poh.assetux.com',          name: 'Relay'    },
+  { url: 'https://miner.iamai.kg', name: 'Miner' },
+  { url: 'https://iamai.kg',       name: 'Main'  },
 ]
 
-export interface POHClientOptions {
+export interface DAIClientOptions {
   /**
    * Single-node base URL (legacy / backwards-compatible).
    * Takes precedence over `nodes` when provided.
-   * e.g. 'https://proofofhuman.ge'
+   * e.g. 'https://iamai.kg'
    */
   baseUrl?: string
   /**
@@ -176,12 +175,12 @@ export interface Method {
 
 export interface AskOptions {
   /**
-   * Fee currency ticker (aiGEL, aiKGS, aiAMD, aiETB, aiBTN). Omit for POH.
+   * Fee currency ticker (aiGEL, aiKGS, aiAMD, aiETB, aiBTN). Omit for DAI.
    * `budget` is then denominated in that currency's display units and the
    * miner receives exactly that currency.
    */
   currency?: string
-  /** Budget in POH (e.g. 0.5 = 0.5 POH = 500_000_000 μPOH). Required for paid jobs. */
+  /** Budget in DAI (e.g. 0.5 = 0.5 DAI = 500_000_000 μDAI). Required for paid jobs. */
   budget?: number
   /** Wallet address to charge the budget from. Required when budget > 0. */
   walletAddress?: string
@@ -224,7 +223,7 @@ export interface ChatAttachment {
 
 export interface ComputeOptions {
   /**
-   * Fee currency ticker (aiGEL, aiKGS, aiAMD, aiETB, aiBTN). Omit for POH.
+   * Fee currency ticker (aiGEL, aiKGS, aiAMD, aiETB, aiBTN). Omit for DAI.
    * `budget` is then denominated in that currency's display units and the
    * miner receives exactly that currency.
    */
@@ -233,7 +232,7 @@ export interface ComputeOptions {
   model: string
   /** Optional Hugging Face dataset id to ground the answer in (must be installed on the node). */
   dataset?: string
-  /** Fee in POH (e.g. 0.5 = 0.5 POH). Required — compute jobs are never free. */
+  /** Fee in DAI (e.g. 0.5 = 0.5 DAI). Required — compute jobs are never free. */
   budget: number
   /** Wallet address paying the fee. */
   walletAddress: string
@@ -415,7 +414,7 @@ export interface Skill {
 
 export interface WalletBalance {
   address: string
-  /** Balance in μPOH (1 POH = 1 000 000 000 μPOH). */
+  /** Balance in μDAI (1 DAI = 1 000 000 000 μDAI). */
   balance: number
   /** Stablecoin holdings: ticker → { raw (integer units, 2dp assets ×100), display }. */
   assets?: Record<string, { raw: number; display: number }>
@@ -459,11 +458,11 @@ export interface TxHistoryResult {
   entries: TxHistoryEntry[]
 }
 
-export interface PohTxRecord {
+export interface DAITxRecord {
   txHash: string
   from:   string
   to:     string
-  /** Amount in μPOH. */
+  /** Amount in μDAI. */
   amount: number
   fee:    number
   nonce:  number
@@ -491,7 +490,7 @@ export interface SendResult {
 }
 
 export interface PendingTxResult {
-  txs:   PohTxRecord[]
+  txs:   DAITxRecord[]
   count: number
 }
 

@@ -1,6 +1,6 @@
 # @poh_network/sdk
 
-JavaScript / TypeScript SDK for the [Proof of Human](https://proofofhuman.ge) network.  
+JavaScript / TypeScript SDK for the [Decentralized Artificial Intelligence](https://iamai.kg) network.  
 Works in **Node.js 18+**, modern **browsers**, and **Deno**.
 
 ## Installation
@@ -12,19 +12,19 @@ npm install @poh_network/sdk
 ## Quick start
 
 ```ts
-import { POHClient } from '@poh_network/sdk'
+import { DAIClient } from '@poh_network/sdk'
 
-const poh = new POHClient({
-  baseUrl: 'https://miner.poh.ge',       // reads + job polling
+const dai = new DAIClient({
+  baseUrl: 'https://miner.iamai.kg',       // reads + job polling
   localBaseUrl: 'http://127.0.0.1:3456',             // wallet / tx / job submission
 })
 
 // Single scan
-const { result, brainKey } = await poh.scan('0xabc...')
+const { result, brainKey } = await dai.scan('0xabc...')
 // result: true = human  |  false = not human  |  null = inconclusive
 
 // AI verdict
-const verdict = await poh.pollBrainVerdict(brainKey!)
+const verdict = await dai.pollBrainVerdict(brainKey!)
 console.log(verdict.verdict, verdict.confidence)
 ```
 
@@ -37,10 +37,10 @@ cloud AI provider — also required when requesting a `model` that isn't
 installed locally on the node.
 
 ```ts
-const { message } = await poh.chat('What is proof of humanity?')
+const { message } = await dai.chat('What is decentralized artificial intelligence?')
 
 // Specific network model, allowing peer / cloud-provider relay
-const { message } = await poh.chat('Explain this contract', {
+const { message } = await dai.chat('Explain this contract', {
   model:   'llama3.1:70b',
   private: false,
   history: [{ role: 'user', content: 'earlier turn' }],
@@ -56,30 +56,30 @@ Skill jobs always require a fee — pass `budget`, `walletAddress`, and
 `privateKeyPem` so the SDK can sign the payment. The node verifies the
 signature and debits the fee before it will run the job at all; it rejects
 the request outright (no job ever runs) without a valid signed payment.
-The fee defaults to POH; pass `currency` to pay in a stablecoin (see
+The fee defaults to DAI; pass `currency` to pay in a stablecoin (see
 [Stablecoins](#stablecoins-multi-currency)). Pass `model` to restrict the
 job to miners running that exact model.
 
 ```ts
 // Ask a question — returns immediately with a job ID
-const ref = await poh.submitJob(
+const ref = await dai.submitJob(
   'What does vitalik.eth write about on Paragraph?',
-  { budget: 0.5, walletAddress: 'poh...', privateKeyPem: myPrivateKey },
+  { budget: 0.5, walletAddress: 'dai...', privateKeyPem: myPrivateKey },
 )
 
 // Wait for the answer
-const result = await poh.pollJobResult(ref.jobId)
+const result = await dai.pollJobResult(ref.jobId)
 console.log(result.output)       // skill-specific structured output
 console.log(result.nlResponse)   // LLM-generated natural language answer
 
 // One-liner convenience
-const result = await poh.askAndWait(
+const result = await dai.askAndWait(
   'What NFTs does gmoney.eth hold?',
-  { budget: 0.5, walletAddress: 'poh...', privateKeyPem: myPrivateKey },
+  { budget: 0.5, walletAddress: 'dai...', privateKeyPem: myPrivateKey },
 )
 
 // Rate the completed job 1–5 stars (once per job — a second call returns HTTP 409)
-await poh.submitFeedback(ref.jobId, 5)
+await dai.submitFeedback(ref.jobId, 5)
 ```
 
 ## Compute jobs (your own model + dataset)
@@ -89,15 +89,15 @@ Face dataset already installed on the node. Like skill jobs, compute jobs
 are never free — `runCompute` always signs a fee payment.
 
 ```ts
-const ref = await poh.runCompute('Summarize the top 5 rows', {
+const ref = await dai.runCompute('Summarize the top 5 rows', {
   model:         'llama3.1:8b',
   dataset:       'some-org/some-dataset', // optional
-  budget:        0.5,                     // POH (or `currency` display units)
+  budget:        0.5,                     // DAI (or `currency` display units)
   walletAddress: myAddress,
   privateKeyPem: myPrivateKey,
 })
 
-const result = await poh.pollJobResult(ref.jobId)
+const result = await dai.pollJobResult(ref.jobId)
 console.log(result.output)
 ```
 
@@ -110,24 +110,24 @@ verify a signature for a key it has never seen.
 ## Wallet / blockchain
 
 ```ts
-// Read balance (μPOH — divide by 1e9 for POH; stablecoins in `assets`)
-const { balance, assets } = await poh.getBalance('poh...')
-console.log(balance / 1e9, 'POH')
+// Read balance (μDAI — divide by 1e9 for DAI; stablecoins in `assets`)
+const { balance, assets } = await dai.getBalance('dai...')
+console.log(balance / 1e9, 'DAI')
 
-// Asset registry (POH + stablecoins) with per-currency gas prices
-const { assets: registry, gasPrices } = await poh.getAssets()
+// Asset registry (DAI + stablecoins) with per-currency gas prices
+const { assets: registry, gasPrices } = await dai.getAssets()
 
 // Nonce (needed before building a transaction)
-const { nonce } = await poh.getNonce('poh...')
+const { nonce } = await dai.getNonce('dai...')
 
 // Transaction history (balance journal: sent / received / mining rewards)
-const { entries } = await poh.getTransactionHistory('poh...', 50)
+const { entries } = await dai.getTransactionHistory('dai...', 50)
 
 // Raw transaction records involving an address
-const { transactions } = await poh.getTransactions('poh...')
+const { transactions } = await dai.getTransactions('dai...')
 
 // Miner info
-const info = await poh.getMinerInfo()
+const info = await dai.getMinerInfo()
 console.log(info.model, info.reputation)
 ```
 
@@ -147,17 +147,17 @@ const kp = await generateKeyPair()
 // 2. Register the public key with your local node (one-time, per node).
 //    registerKeyPair() also derives + publishes the wallet's X25519 encryption
 //    key so miners can seal public-job chat records to it.
-await poh.registerKeyPair(kp)
+await dai.registerKeyPair(kp)
 
 // 3. Build, sign, and submit a transfer
-const { nonce } = await poh.getNonce(kp.address)
+const { nonce } = await dai.getNonce(kp.address)
 const tx     = await buildTransfer(kp.address, recipient, 5.0, nonce + 1)
 const signed = await signTransaction(tx, kp.signingPrivateKey)
-const result = await poh.submitTransaction(signed)
+const result = await dai.submitTransaction(signed)
 console.log(result.txHash)
 
 // One-liner convenience (fetches nonce automatically)
-const result = await poh.transfer(kp.address, recipient, 5.0, kp.signingPrivateKey)
+const result = await dai.transfer(kp.address, recipient, 5.0, kp.signingPrivateKey)
 ```
 
 To replace an already-registered key, build a `createRotationProof(address,
@@ -175,27 +175,27 @@ already mined) as an idempotent success and sets `idempotent: true` on the
 
 ## Stablecoins (multi-currency)
 
-The chain carries five regional stablecoins alongside POH: `aiGEL`, `aiKGS`,
+The chain carries five regional stablecoins alongside DAI: `aiGEL`, `aiKGS`,
 `aiAMD`, `aiETB`, `aiBTN` (displayed as αιGEL etc.). They use **2 decimals**
-(1 aiGEL = 100 raw units), while POH keeps 9 (1 POH = 1e9 μPOH).
+(1 aiGEL = 100 raw units), while DAI keeps 9 (1 DAI = 1e9 μDAI).
 
 ```ts
 // Transfer 12.50 aiGEL (amount is in the asset's display units)
-await poh.transfer(from, to, 12.5, privateKeyPem, 0, '', 'aiGEL')
+await dai.transfer(from, to, 12.5, privateKeyPem, 0, '', 'aiGEL')
 
 // Pay a compute job fee in aiKGS — the miner receives exactly aiKGS
-await poh.runCompute('Summarize…', {
+await dai.runCompute('Summarize…', {
   model: 'qwen3-1.7b', budget: 5.0, currency: 'aiKGS',
   walletAddress, privateKeyPem,
 })
 
-// Balances: POH scalar + per-asset map
-const bal = await poh.getBalance(addr)
-// bal.balance → μPOH;  bal.assets → { aiGEL: { raw: 1250, display: 12.5 }, … }
+// Balances: DAI scalar + per-asset map
+const bal = await dai.getBalance(addr)
+// bal.balance → μDAI;  bal.assets → { aiGEL: { raw: 1250, display: 12.5 }, … }
 ```
 
-Hash compatibility: a POH transaction/job-payment hashes **exactly** as before
-(`currency` enters the signed preimage only when non-POH), so existing
+Hash compatibility: a DAI transaction/job-payment hashes **exactly** as before
+(`currency` enters the signed preimage only when non-DAI), so existing
 integrations keep working unchanged.
 
 ## Chat record encryption
@@ -210,61 +210,61 @@ import { deriveEncryptionKeypair } from '@poh_network/sdk'
 const { publicKeyB64, privateScalarB64 } = deriveEncryptionKeypair(kp.signingPrivateKey)
 
 // Decrypt a sealed field — cleartext input passes through unchanged
-const prompt = poh.decryptSealed(record.promptCipher, privateScalarB64)
+const prompt = dai.decryptSealed(record.promptCipher, privateScalarB64)
 ```
 
 ## Skills
 
 ```ts
-const skills = await poh.listSkills()
+const skills = await dai.listSkills()
 skills.forEach(s => console.log(s.id, s.feeMin))
 ```
 
 ## Bulk scans
 
 ```ts
-const { jobId } = await poh.scanBulk(['0xaaa...', '0xbbb...', '0xccc...'])
+const { jobId } = await dai.scanBulk(['0xaaa...', '0xbbb...', '0xccc...'])
 
 // Poll until done
-const final = await poh.pollJob(jobId, {
+const final = await dai.pollJob(jobId, {
   interval:   2_000,
   onProgress: j => console.log(`${j.percent}% complete`),
 })
 
 // Or stream progress
-for await (const snap of poh.watchJob(jobId)) {
+for await (const snap of dai.watchJob(jobId)) {
   process.stdout.write(`\r${snap.percent}% (${snap.done}/${snap.total})`)
 }
 
 // One-liner
-const { results } = await poh.scanAndWait(['0xaaa...', '0xbbb...'])
+const { results } = await dai.scanAndWait(['0xaaa...', '0xbbb...'])
 ```
 
 ## Multi-node
 
 ```ts
-const poh = new POHClient({
+const dai = new DAIClient({
   nodes: [
-    'https://miner.poh.ge',
-    'https://proofofhuman.ge',
-    'https://poh.assetux.com',
+    'https://miner.iamai.kg',
+    'https://iamai.kg',
+    'https://miner.iamai.kg',
   ]
 })
 // Automatically picks the fastest responding node (pickStrategy: 'fastest'),
 // or set pickStrategy: 'first-alive' to try nodes in declared order.
 
-poh.activeNode // URL of the node in use (undefined until the first request resolves)
+dai.activeNode // URL of the node in use (undefined until the first request resolves)
 ```
 
 ## Error handling
 
 ```ts
-import { POHClient, POHError } from '@poh_network/sdk'
+import { DAIClient, DAIError } from '@poh_network/sdk'
 
 try {
-  await poh.scan('0xabc...')
+  await dai.scan('0xabc...')
 } catch (err) {
-  if (err instanceof POHError) {
+  if (err instanceof DAIError) {
     console.error(`HTTP ${err.status}: ${err.message}`)
   }
 }
@@ -272,7 +272,7 @@ try {
 
 ## API reference
 
-### `new POHClient(options)`
+### `new DAIClient(options)`
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
@@ -325,8 +325,8 @@ try {
 
 | Method | Description |
 |--------|-------------|
-| `getBalance(address)` | Wallet balance in μPOH (+ `assets` map of stablecoin holdings) |
-| `getAssets()` | On-chain asset registry (POH + aiGEL/aiKGS/aiAMD/aiETB/aiBTN) + per-currency gas prices |
+| `getBalance(address)` | Wallet balance in μDAI (+ `assets` map of stablecoin holdings) |
+| `getAssets()` | On-chain asset registry (DAI + aiGEL/aiKGS/aiAMD/aiETB/aiBTN) + per-currency gas prices |
 | `getNonce(address)` | Current account nonce (+ `pendingNonce` when mempool txs reserve higher) |
 | `getTransactionHistory(address, limit?)` | Balance journal history |
 | `getTransactions(address)` | Raw transaction records involving an address |
@@ -334,7 +334,7 @@ try {
 | `submitTransaction(tx)` | Submit pre-signed tx. Duplicate resubmits succeed with `idempotent: true` |
 | `registerSigningKey(addr, signingPublicKey, proof, rotationProof?, encryptionPublicKey?)` | Register signing key (+ optional X25519 encryption key) |
 | `registerKeyPair(keyPair, rotationProof?)` | Register a `generateKeyPair()` result; auto-derives proof + encryption key |
-| `transfer(from, to, amount, privateKey, fee?, memo?, currency?)` | Full transfer flow (amount in the currency's display units; POH default) |
+| `transfer(from, to, amount, privateKey, fee?, memo?, currency?)` | Full transfer flow (amount in the currency's display units; DAI default) |
 | `decryptSealed(envelopeOrText, privateScalarB64)` | Decrypt a sealed public-job field (cleartext passes through) |
 
 ### Signing utilities
@@ -342,7 +342,7 @@ try {
 | Export | Description |
 |--------|-------------|
 | `generateKeyPair()` | Fresh Ed25519 keypair (PKCS8 PEM) |
-| `deriveAddressFromSigningKey(signingPublicKey)` | Canonical `poh…` address for an SPKI PEM public key |
+| `deriveAddressFromSigningKey(signingPublicKey)` | Canonical `dai…` address for an SPKI PEM public key |
 | `signData(message, privateKeyPem)` | Sign arbitrary data |
 | `createSigningProof(address, privateKeyPem)` | Proof for key registration |
 | `createRotationProof(address, newSigningPublicKey, existingPrivateKeyPem)` | Proof for replacing a registered key |

@@ -22,7 +22,7 @@ export async function pollUntilDone(
     if (job.status === 'done' || job.status === 'error') return job
     if (Date.now() + interval > deadline) {
       throw new Error(
-        `POH job "${jobId}" did not complete within ${timeout}ms (last status: ${job.status})`,
+        `DAI job "${jobId}" did not complete within ${timeout}ms (last status: ${job.status})`,
       )
     }
     await sleep(interval)
@@ -54,7 +54,7 @@ export async function* watchJob(
     if (job.status === 'done' || job.status === 'error') return
     if (Date.now() + interval > deadline) {
       throw new Error(
-        `POH job "${jobId}" did not complete within ${timeout}ms (last status: ${job.status})`,
+        `DAI job "${jobId}" did not complete within ${timeout}ms (last status: ${job.status})`,
       )
     }
     await sleep(interval)

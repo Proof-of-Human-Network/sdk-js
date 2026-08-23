@@ -1,4 +1,4 @@
-export { POHClient, POHError } from './client.js'
+export { DAIClient, DAIError } from './client.js'
 export {
   generateKeyPair,
   deriveAddressFromSigningKey,
@@ -24,7 +24,7 @@ export {
 export type { SealedEnvelope } from './chatcrypto.js'
 export { DEFAULT_NODES, MAX_ATTACHMENT_BYTES } from './types.js'
 export type {
-  POHClientOptions,
+  DAIClientOptions,
   NodeConfig,
   FetchFn,
   ScanOptions,
@@ -58,11 +58,11 @@ export type {
   AccountNonce,
   TxHistoryEntry,
   TxHistoryResult,
-  PohTxRecord,
+  DAITxRecord,
   TxSubmitResult,
   SendResult,
   PendingTxResult,
   RegisterKeyResult,
   MinerInfo,
 } from './types.js'
-export type { KeyPair, PohTx, JobPaymentParams } from './signing.js'
+export type { KeyPair, DAITx, JobPaymentParams } from './signing.js'

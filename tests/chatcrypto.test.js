@@ -31,7 +31,7 @@ test('sealJSON/openJSON', () => {
 })
 
 // Byte-compat with the node reference: an envelope the node produced must open here.
-// This fixture was sealed by poh-miner src/security/chat-crypto.js for kp('node-secret').
+// This fixture was sealed by dai-miner src/security/chat-crypto.js for kp('node-secret').
 test('opens a node-sealed envelope (cross-impl compat)', () => {
   const kp = deriveEncryptionKeypair('node-secret')
   const env = seal(kp.publicKeyB64, 'interop check')

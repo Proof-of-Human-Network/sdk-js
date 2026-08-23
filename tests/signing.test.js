@@ -37,7 +37,7 @@ test('generateKeyPair returns valid PEM keys and derived address', async () => {
   const kp = await generateKeyPair()
   assert.ok(kp.signingPrivateKey.includes('-----BEGIN PRIVATE KEY-----'))
   assert.ok(kp.signingPublicKey.includes('-----BEGIN PUBLIC KEY-----'))
-  assert.match(kp.address, /^poh[a-f0-9]{40}$/)
+  assert.match(kp.address, /^dai[a-f0-9]{40}$/)
   assert.equal(kp.address, await deriveAddressFromSigningKey(kp.signingPublicKey))
 })
 
@@ -74,7 +74,7 @@ test('signData produces same signature for same input (deterministic)', async ()
 
 test('createSigningProof returns same result as signData of address', async () => {
   const { signingPrivateKey } = await generateKeyPair()
-  const address = 'poh_test_address'
+  const address = 'dai_test_address'
   const proof = await createSigningProof(address, signingPrivateKey)
   const direct = await signData(address, signingPrivateKey)
   assert.equal(proof, direct)
@@ -84,7 +84,7 @@ test('createSigningProof returns same result as signData of address', async () =
 
 test('computeTxHash returns 64-char hex string', async () => {
   const hash = await computeTxHash({
-    from: 'pohA', to: 'pohB', amount: 1_000_000_000, fee: 0, nonce: 1, timestamp: 1700000000000, memo: '',
+    from: 'daiA', to: 'daiB', amount: 1_000_000_000, fee: 0, nonce: 1, timestamp: 1700000000000, memo: '',
   })
   assert.equal(typeof hash, 'string')
   assert.equal(hash.length, 64)
@@ -92,14 +92,14 @@ test('computeTxHash returns 64-char hex string', async () => {
 })
 
 test('computeTxHash is deterministic for same inputs', async () => {
-  const args = { from: 'pohA', to: 'pohB', amount: 5_000_000_000, fee: 1000, nonce: 3, timestamp: 1700000000000, memo: 'test' }
+  const args = { from: 'daiA', to: 'daiB', amount: 5_000_000_000, fee: 1000, nonce: 3, timestamp: 1700000000000, memo: 'test' }
   const h1 = await computeTxHash(args)
   const h2 = await computeTxHash(args)
   assert.equal(h1, h2)
 })
 
 test('computeTxHash differs for different amounts', async () => {
-  const base = { from: 'pohA', to: 'pohB', fee: 0, nonce: 1, timestamp: 1700000000000, memo: '' }
+  const base = { from: 'daiA', to: 'daiB', fee: 0, nonce: 1, timestamp: 1700000000000, memo: '' }
   const h1 = await computeTxHash({ ...base, amount: 1_000_000_000 })
   const h2 = await computeTxHash({ ...base, amount: 2_000_000_000 })
   assert.notEqual(h1, h2)
@@ -107,15 +107,15 @@ test('computeTxHash differs for different amounts', async () => {
 
 // ── buildTransfer ─────────────────────────────────────────────────────────────
 
-test('buildTransfer converts POH to μPOH', async () => {
-  const tx = await buildTransfer('pohA', 'pohB', 1.5, 3)
+test('buildTransfer converts DAI to μDAI', async () => {
+  const tx = await buildTransfer('daiA', 'daiB', 1.5, 3)
   assert.equal(tx.amount, 1_500_000_000)
 })
 
 test('buildTransfer sets all required fields', async () => {
-  const tx = await buildTransfer('pohA', 'pohB', 0.001, 5, 100, 'memo text')
-  assert.equal(tx.from, 'pohA')
-  assert.equal(tx.to, 'pohB')
+  const tx = await buildTransfer('daiA', 'daiB', 0.001, 5, 100, 'memo text')
+  assert.equal(tx.from, 'daiA')
+  assert.equal(tx.to, 'daiB')
   assert.equal(tx.amount, 1_000_000)
   assert.equal(tx.fee, 100)
   assert.equal(tx.nonce, 5)
@@ -125,7 +125,7 @@ test('buildTransfer sets all required fields', async () => {
 })
 
 test('buildTransfer txHash is correct SHA-256', async () => {
-  const tx = await buildTransfer('pohA', 'pohB', 1.0, 1)
+  const tx = await buildTransfer('daiA', 'daiB', 1.0, 1)
   const expectedHash = await computeTxHash(tx)
   assert.equal(tx.txHash, expectedHash)
 })
@@ -134,7 +134,7 @@ test('buildTransfer txHash is correct SHA-256', async () => {
 
 test('signTransaction fills in signature and signingPublicKey', async () => {
   const { signingPrivateKey } = await generateKeyPair()
-  const tx = await buildTransfer('pohA', 'pohB', 2.0, 1)
+  const tx = await buildTransfer('daiA', 'daiB', 2.0, 1)
   const signed = await signTransaction(tx, signingPrivateKey)
   assert.ok(typeof signed.signature === 'string' && signed.signature.length > 0)
   assert.ok(signed.signingPublicKey?.includes('-----BEGIN PUBLIC KEY-----'))
@@ -143,13 +143,13 @@ test('signTransaction fills in signature and signingPublicKey', async () => {
 
 test('signTransaction throws if txHash is missing', async () => {
   const { signingPrivateKey } = await generateKeyPair()
-  const tx = { from: 'pohA', to: 'pohB', amount: 1_000_000_000, fee: 0, nonce: 1, timestamp: Date.now(), memo: '' }
+  const tx = { from: 'daiA', to: 'daiB', amount: 1_000_000_000, fee: 0, nonce: 1, timestamp: Date.now(), memo: '' }
   await assert.rejects(() => signTransaction(tx, signingPrivateKey), /txHash missing/)
 })
 
 test('signTransaction preserves from, to, amount, nonce, memo', async () => {
   const { signingPrivateKey } = await generateKeyPair()
-  const tx = await buildTransfer('pohA', 'pohB', 3.0, 7, 500, 'hello')
+  const tx = await buildTransfer('daiA', 'daiB', 3.0, 7, 500, 'hello')
   const signed = await signTransaction(tx, signingPrivateKey)
   assert.equal(signed.from, tx.from)
   assert.equal(signed.to, tx.to)
@@ -160,8 +160,8 @@ test('signTransaction preserves from, to, amount, nonce, memo', async () => {
 
 // ── Multi-currency (stablecoins) ─────────────────────────────────────────────
 
-test('POH tx hash omits currency — byte-identical to the legacy preimage', async () => {
-  const fields = { from: 'pohA', to: 'pohB', amount: 1000, fee: 5, nonce: 1, timestamp: 1700000000000, memo: '' }
+test('DAI tx hash omits currency — byte-identical to the legacy preimage', async () => {
+  const fields = { from: 'daiA', to: 'daiB', amount: 1000, fee: 5, nonce: 1, timestamp: 1700000000000, memo: '' }
   const legacyPayload = JSON.stringify({
     from: fields.from, to: fields.to, amount: fields.amount,
     fee: fields.fee, nonce: fields.nonce, timestamp: fields.timestamp, memo: fields.memo,
@@ -169,22 +169,22 @@ test('POH tx hash omits currency — byte-identical to the legacy preimage', asy
   const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(legacyPayload))
   const legacyHash = Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('')
   assert.equal(await computeTxHash(fields), legacyHash)
-  assert.equal(await computeTxHash({ ...fields, currency: 'POH' }), legacyHash) // POH normalizes away
+  assert.equal(await computeTxHash({ ...fields, currency: 'DAI' }), legacyHash) // DAI normalizes away
 })
 
 test('buildTransfer with a stablecoin scales at 2 decimals and carries currency', async () => {
-  const tx = await buildTransfer('pohA', 'pohB', 12.5, 1, 0, '', 'aiGEL')
+  const tx = await buildTransfer('daiA', 'daiB', 12.5, 1, 0, '', 'aiGEL')
   assert.equal(tx.amount, 1250)          // 12.50 aiGEL → 1250 raw (×100)
   assert.equal(tx.currency, 'aiGEL')
-  // currency changes the hash vs the same POH-shaped tx
-  const pohTx = await buildTransfer('pohA', 'pohB', 12.5, 1)
-  assert.notEqual(tx.txHash, pohTx.txHash)
+  // currency changes the hash vs the same DAI-shaped tx
+  const daiTx = await buildTransfer('daiA', 'daiB', 12.5, 1)
+  assert.notEqual(tx.txHash, daiTx.txHash)
 })
 
-test('computeJobPaymentHash: currency is the 6th key only when non-POH', async () => {
-  const base = { jobId: 'j1', requesterAddress: 'pohA', minerAddress: 'pohM', amount: 100, nonce: 0 }
-  const pohHash = await computeJobPaymentHash(base)
-  assert.equal(await computeJobPaymentHash({ ...base, currency: 'POH' }), pohHash)
+test('computeJobPaymentHash: currency is the 6th key only when non-DAI', async () => {
+  const base = { jobId: 'j1', requesterAddress: 'daiA', minerAddress: 'daiM', amount: 100, nonce: 0 }
+  const daiHash = await computeJobPaymentHash(base)
+  assert.equal(await computeJobPaymentHash({ ...base, currency: 'DAI' }), daiHash)
   const gelHash = await computeJobPaymentHash({ ...base, currency: 'aiGEL' })
-  assert.notEqual(gelHash, pohHash)
+  assert.notEqual(gelHash, daiHash)
 })

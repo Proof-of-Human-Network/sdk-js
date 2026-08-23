@@ -1,12 +1,12 @@
 /**
- * chat-crypto — portable public-job chat encryption for the POH SDK.
+ * chat-crypto — portable public-job chat encryption for the DAI SDK.
  *
  * Public compute jobs are raced by miners the requester doesn't control, so the
  * on-chain record of the prompt/reply is sealed to the requester's X25519 key:
  *
  *     X25519 (ECDH) → HKDF-SHA256 → AES-256-GCM
  *
- * Byte-identical to the node reference (poh-miner `src/security/chat-crypto.js`,
+ * Byte-identical to the node reference (dai-miner `src/security/chat-crypto.js`,
  * verified round-trip). Implemented with @noble (pure JS) so it behaves the same in
  * Node, browsers and React Native. See CHAT-CRYPTO.md for the wire format.
  */
@@ -16,8 +16,8 @@ import { sha256 } from '@noble/hashes/sha2.js'
 import { randomBytes } from '@noble/hashes/utils.js'
 import { gcm } from '@noble/ciphers/aes.js'
 
-const SEAL_INFO = new TextEncoder().encode('poh-chat-seal-v1')
-const SCALAR_INFO = new TextEncoder().encode('poh-x25519-v1')
+const SEAL_INFO = new TextEncoder().encode('dai-chat-seal-v1')
+const SCALAR_INFO = new TextEncoder().encode('dai-x25519-v1')
 
 export interface SealedEnvelope {
   v: 1
@@ -45,7 +45,7 @@ const fromUtf8 = (u: Uint8Array) => new TextDecoder().decode(u)
 /**
  * Deterministically derive the wallet's X25519 encryption keypair from a stable
  * secret (its ed25519 signing private key PEM), matching the node. The public key is
- * what you register via {@link POHClient.registerKeyPair}; the private scalar opens
+ * what you register via {@link DAIClient.registerKeyPair}; the private scalar opens
  * sealed replies.
  */
 export function deriveEncryptionKeypair(stableSecret: string | Uint8Array): {
