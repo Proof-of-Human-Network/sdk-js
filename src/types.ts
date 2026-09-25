@@ -251,6 +251,113 @@ export interface ComputeOptions {
   route?: boolean
 }
 
+// ── Fee estimation ────────────────────────────────────────────────────────────
+
+/** Inclusive token bounds. `min === max` when the size is measured exactly. */
+export interface TokenRange { min: number; max: number }
+
+/**
+ * What to estimate — the same fields a job or chat request carries. Send exactly
+ * what you would send to `runCompute()` / `chat()` / the OpenAI-compatible API.
+ */
+export interface EstimateInput {
+  /** `compute` (default) = a paid job; `chat` = OpenAI-style `messages[]`; `skill` = a skill job. */
+  type?: 'compute' | 'chat' | 'skill'
+  /** The job prompt (or the question, for a skill job). */
+  prompt?: string
+  /** OpenAI-style messages, for `type: 'chat'` (send this OR `prompt`). */
+  messages?: { role: 'system' | 'developer' | 'user' | 'assistant'; content: string }[]
+  /** Prior turns. With `requesterAddress`, on-chain public turns are counted too. */
+  history?: { role: 'user' | 'assistant' | 'system'; content: string }[]
+  /** File attachments. Text is inlined and measured; images are not billed by the node. */
+  attachments?: ChatAttachment[]
+  /** A specific skill to run (otherwise the node routes from the prompt, as a job would). */
+  skillId?: string
+  /** MCP tool names (`server__tool`) to run in a cascade. */
+  mcp?: string[]
+  /** An installed Hugging Face dataset id — the rows the job would inject are measured. */
+  dataset?: string
+  /** Fee currency ticker; omit for DAI. Non-DAI fees are quoted off the live P2P book. */
+  currency?: string
+  /** Output tokens to reserve (1..4096, default 512). Jobs cap output at 512 regardless. */
+  maxOutputTokens?: number
+  /** `false` skips skill/cascade routing, as on a job. */
+  route?: boolean
+  model?: string
+  /** Defaults to the client's `walletAddress`. */
+  requesterAddress?: string
+  /** The `/job` payload address, if any (it sets the job fee floor). */
+  address?: string
+}
+
+/** One contributor to the prompt, tagged by how well its size is known. */
+export interface EstimateBreakdownItem {
+  id: string
+  kind: 'prompt' | 'history' | 'attachment' | 'dataset' | 'skill' | 'skill-compute' | 'mcp' | 'planner' | 'hf-model'
+  ref?: string
+  tokens: TokenRange
+  /** measured = counted exactly; bounded = capped by the executing code; assumed = a stated assumption. */
+  basis: 'measured' | 'bounded' | 'assumed'
+  note?: string
+}
+
+/** One model call the pipeline makes. */
+export interface EstimateCall {
+  purpose: string
+  promptTokens: TokenRange
+  outputTokens: TokenRange
+  basis?: 'assumed'
+  note?: string
+}
+
+/** A fee in one currency. `raw` is absent when `unavailable` (no market quotes that pair). */
+export interface FeeQuote {
+  tokens: number
+  /** Raw units of `currency` (μDAI for DAI). */
+  raw?: number
+  currency: string
+  /** Endpoint whose floor this is (on `minimum`). */
+  gate?: string
+  gasPrice?: number
+  source?: string
+  via?: string
+  display?: number
+  unavailable?: boolean
+  message?: string
+}
+
+export interface EstimateResult {
+  ok: true
+  type: 'compute' | 'chat' | 'skill'
+  /** `job` (POST /job) or `chat` (/v1, /openai/v1) — decides which minimum applies. */
+  target: 'job' | 'chat'
+  model: string
+  currency: string
+  gasPrice: number
+  route: {
+    mode: 'direct' | 'routed-skill' | 'cascade' | 'skill-job'
+    /** True when the plan comes from the deterministic router; the live model-planner may differ. */
+    predicted: boolean
+    reason: string | null
+    skillId?: string
+    tasks?: { id: string; kind: string; skillId?: string; tool?: string }[]
+  }
+  tokens: { prompt: TokenRange; output: TokenRange; skillCompute: TokenRange; total: TokenRange }
+  calls: EstimateCall[]
+  breakdown: EstimateBreakdownItem[]
+  fees: {
+    currency: string
+    /** The lowest fee the node accepts — bids below it are rejected. */
+    minimum: FeeQuote
+    /** Covers the pipeline's worst case (never below `minimum`). Escrow this. */
+    recommended: FeeQuote
+    /** DAI figures, present when `currency` is not DAI. */
+    dai?: { minimum: FeeQuote; recommended: FeeQuote }
+  }
+  outputCap: { budgetCapApplies: boolean; tokens?: number; note?: string }
+  warnings: string[]
+}
+
 // ── Chat ──────────────────────────────────────────────────────────────────────
 
 export interface ChatOptions {

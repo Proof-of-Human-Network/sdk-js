@@ -579,3 +579,66 @@ test('activeNode returns baseUrl immediately when set', () => {
   })
   assert.equal(dai.activeNode, 'https://api.example.com')
 })
+
+// ── estimate ──────────────────────────────────────────────────────────────────
+
+const ESTIMATE_BODY = {
+  ok: true, type: 'compute', target: 'job', model: 'qwen3-1.7b', currency: 'DAI', gasPrice: 1,
+  route: { mode: 'direct', predicted: true, reason: 'chat' },
+  tokens: { prompt: { min: 19, max: 19 }, output: { min: 1, max: 512 }, skillCompute: { min: 0, max: 0 }, total: { min: 20, max: 531 } },
+  calls: [], breakdown: [],
+  fees: { currency: 'DAI', minimum: { tokens: 990, raw: 990, currency: 'DAI', gate: '/job' }, recommended: { tokens: 990, raw: 990, currency: 'DAI' } },
+  outputCap: { budgetCapApplies: true, tokens: 512 }, warnings: [],
+}
+
+test('estimate POSTs the job fields to /api/estimate and returns the typed result', async () => {
+  let seen
+  const dai = new DAIClient({
+    baseUrl: 'http://mock',
+    fetch: async (url, init) => {
+      seen = { url, init }
+      return new Response(JSON.stringify(ESTIMATE_BODY), { status: 200, headers: { 'Content-Type': 'application/json' } })
+    },
+  })
+  const res = await dai.estimate({ prompt: 'Hello', skillId: 'web_search', maxOutputTokens: 200 })
+  assert.equal(seen.url, 'http://mock/api/estimate')
+  assert.equal(seen.init.method, 'POST')
+  const sent = JSON.parse(seen.init.body)
+  assert.equal(sent.prompt, 'Hello')
+  assert.equal(sent.skillId, 'web_search')
+  assert.equal(sent.maxOutputTokens, 200)
+  assert.equal(res.fees.recommended.raw, 990)
+  assert.equal(res.tokens.total.max, 531)
+})
+
+test('estimate works against a remote node (read-only, no localBaseUrl needed)', async () => {
+  const dai = new DAIClient({ baseUrl: 'https://remote.example', fetch: makeFetch([ESTIMATE_BODY]) })
+  const res = await dai.estimate({ prompt: 'x' })
+  assert.equal(res.ok, true)
+})
+
+test('estimate defaults requesterAddress to the client wallet and lets a call override it', async () => {
+  const bodies = []
+  const dai = new DAIClient({
+    baseUrl: 'http://mock', walletAddress: 'dai' + 'a'.repeat(40),
+    fetch: async (_u, init) => { bodies.push(JSON.parse(init.body)); return new Response(JSON.stringify(ESTIMATE_BODY)) },
+  })
+  await dai.estimate({ prompt: 'x' })
+  await dai.estimate({ prompt: 'x', requesterAddress: 'dai' + 'b'.repeat(40) })
+  assert.equal(bodies[0].requesterAddress, 'dai' + 'a'.repeat(40))
+  assert.equal(bodies[1].requesterAddress, 'dai' + 'b'.repeat(40))
+})
+
+test('estimate rejects an empty request locally, but allows a skill job with no question', async () => {
+  const dai = client([ESTIMATE_BODY])
+  await assert.rejects(() => dai.estimate({}), (e) => e instanceof DAIError && e.status === 400)
+  const res = await dai.estimate({ type: 'skill', skillId: 'web_search' })
+  assert.equal(res.ok, true)
+})
+
+test('estimate surfaces node errors as DAIError (e.g. 404 on a node without the endpoint)', async () => {
+  const dai = client([{ status: 404, body: { error: 'Not found' } }])
+  await assert.rejects(() => dai.estimate({ prompt: 'x' }), (e) => e instanceof DAIError && e.status === 404)
+  const bad = client([{ status: 422, body: { error: 'Dataset "x" is not installed', code: 'dataset_not_installed' } }])
+  await assert.rejects(() => bad.estimate({ prompt: 'x', dataset: 'x' }), (e) => e.status === 422 && e.body.code === 'dataset_not_installed')
+})

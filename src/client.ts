@@ -17,6 +17,8 @@ import type {
   AskJobStatus,
   AskJobResult,
   ChatOptions,
+  EstimateInput,
+  EstimateResult,
   ChatResult,
   ComputeOptions,
   FeedbackResult,
@@ -174,7 +176,7 @@ export class DAIClient {
     const m = method.toUpperCase()
     if (m === 'GET' || m === 'HEAD' || m === 'OPTIONS') return false
     const p = path.split('?')[0]
-    if (m === 'POST' && p === '/gossip') return false
+    if (m === 'POST' && (p === '/gossip' || p === '/api/estimate')) return false   // read-only
     return true
   }
 
@@ -588,6 +590,44 @@ export class DAIClient {
       attachments: options.attachments,
       datasetId: options.datasetId,
       requesterAddress: options.requesterAddress ?? this.walletAddress,
+    })
+  }
+
+  // ── Fee estimation ─────────────────────────────────────────────────────────
+
+  /**
+   * Estimate what a job or chat request will cost — the `eth_estimateGas` of DAI.
+   *
+   * Send the same fields you would submit (prompt, attachments, a skill, MCP tools, a
+   * dataset). The node sizes the whole pipeline — attachment text, skill and MCP output,
+   * dataset rows, planner and synthesis calls — and returns the AI tokens it will use, the
+   * minimum fee it accepts, and a recommended budget. Read-only: nothing runs or is paid.
+   *
+   * Sizes that only exist after running (what a skill fetches) come back as `{min, max}`
+   * bounded by the executor's own caps, each tagged `measured | bounded | assumed`.
+   *
+   * Needs a node newer than 0.4.36 (it adds `POST /api/estimate`); older nodes answer 404.
+   *
+   * @example
+   * const est = await dai.estimate({
+   *   prompt: 'Summarise this report',
+   *   attachments: [{ name: 'report.md', content: text }],
+   * })
+   * est.fees.minimum.raw       // μDAI the node will accept, at minimum
+   * est.fees.recommended.raw   // μDAI to escrow (covers the worst case)
+   * await dai.runCompute('Summarise this report', {
+   *   model: 'qwen3-1.7b', walletAddress, privateKeyPem,
+   *   budget: est.fees.recommended.raw! / 1e9,   // runCompute takes DAI, estimate returns μDAI
+   * })
+   */
+  async estimate(input: EstimateInput): Promise<EstimateResult> {
+    const hasBody = !!(input?.prompt || input?.messages?.length || input?.attachments?.length)
+    if (!hasBody && !(input?.type === 'skill' && input.skillId)) {
+      throw new DAIError('estimate: prompt, messages or attachments required', 400)
+    }
+    return this.request<EstimateResult>('POST', '/api/estimate', {
+      ...input,
+      requesterAddress: input.requesterAddress ?? this.walletAddress,
     })
   }
 
