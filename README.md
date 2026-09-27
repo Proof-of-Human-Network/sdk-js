@@ -359,7 +359,7 @@ try {
 | `runCompute(prompt, opts)` | Submit a job that runs a specific `model` (and optional `dataset`). Always requires a fee; optional `currency`, `jobId`. |
 | `estimate(input)` | Estimate a job's or chat's fee before paying — tokens, minimum fee, recommended budget. Read-only; works on remote nodes. Input: `prompt`/`messages`, `attachments`, `skillId`, `mcp`, `dataset`, `currency`, `maxOutputTokens`, `route`. |
 | `getJobStatus(jobId)` | Poll job status |
-| `getJobResult(jobId)` | Fetch completed result |
+| `getJobResult(jobId)` | Fetch completed result. A public job leaves `output` empty and sets `replyCipher`; open it with `decryptSealed` |
 | `pollJobResult(jobId, opts?)` | Poll until result ready |
 | `askAndWait(question, opts?)` | Submit + wait in one call |
 | `submitFeedback(jobId, stars, comment?)` | Rate a completed job 1–5 stars (once per job; repeat → HTTP 409) |

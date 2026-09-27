@@ -492,6 +492,13 @@ export interface AskJobResult {
   skillId?: string
   /** Tokens billed for the job. */
   tokensUsed?: number
+  /**
+   * True when the reply was sealed to the requester's X25519 key.
+   * `output` is null until `decryptSealed(replyCipher, privateScalar)` is called.
+   */
+  encrypted?: boolean
+  /** Sealed reply envelope (`profile.replyCipher`). Present on public jobs. */
+  replyCipher?: unknown
   error?: string
 }
 

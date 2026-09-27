@@ -719,13 +719,17 @@ export class DAIClient {
           tokensUsed?: number
           nlResponse?: string
           computeOutput?: string | null
+          replyCipher?: unknown
+          encrypted?: boolean
         }
         evidence?: unknown
         minerWallet?: string
         error?: string
       }
 
-      // skill jobs → skillOutput / nlResponse; compute jobs → computeOutput
+      // skill jobs → skillOutput / nlResponse; compute jobs → computeOutput.
+      // Public jobs seal the reply: computeOutput is null and replyCipher is set.
+      const replyCipher = data.profile?.replyCipher ?? null
       const output =
         data.profile?.skillOutput ??
         data.profile?.computeOutput ??
@@ -739,6 +743,8 @@ export class DAIClient {
         nlResponse: data.profile?.nlResponse ?? (typeof data.profile?.computeOutput === 'string' ? data.profile.computeOutput : undefined),
         skillId:    data.profile?.skillId,
         tokensUsed: data.profile?.tokensUsed,
+        encrypted:  !!(replyCipher && output == null) || data.profile?.encrypted === true,
+        replyCipher: replyCipher ?? undefined,
         error:      data.error,
       }
     } catch (err) {
